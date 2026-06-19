@@ -1,0 +1,129 @@
+name: CI
+
+# Mirrors ../agent-workflow conventions, scaled to Lantern's current state
+# (docs-only). `docs` + `scans` run now; `check` (TS lint/typecheck/test)
+# auto-activates once the lanternd/CLI TypeScript lands (package.json present).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    name: Markdown link check (README + design/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Lychee — fail on broken links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # http/https only (ignore the ssh:// placeholder in design examples);
+          # 403/429 accepted (CI runners get rate-limited by GitHub/anonymous);
+          # exclude the loopback host mentioned in prose.
+          args: >-
+            --no-progress
+            --max-concurrency 4
+            --scheme https --scheme http
+            --accept 200,206,403,429
+            --exclude '127\.0\.0\.1'
+            'README.md'
+            'design/**/*.md'
+          fail: true
+          jobSummary: true
+        env:
+          # Authenticated rate limits (5000/hr) so github.com links don't flake.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  scans:
+    name: Static scans (actionlint + gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # gitleaks scans full commit history.
+          fetch-depth: 0
+
+      - name: actionlint (GitHub Actions workflow lint)
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+      - name: gitleaks (secret scanning)
+        # Install the upstream binary directly (the JS action still ships node20).
+        # The design docs use only placeholder credentials (secretRef labels), so
+        # this should stay clean; if it ever false-positives, add a scoped
+        # allowlist in .gitleaks.toml — do NOT continue-on-error.
+        run: |
+          set -euo pipefail
+          version=8.30.1
+          tmp=$(mktemp -d)
+          curl -fsSL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            | tar -xz -C "$tmp" gitleaks
+          "$tmp/gitleaks" detect --source . --no-banner --redact --verbose
+
+  check:
+    # TS lint/typecheck/test for lanternd + lantern CLI. Every real step is
+    # gated on a package.json existing, so until the TypeScript code lands this
+    # job is a green checkout-only no-op; once it lands it auto-activates and
+    # mirrors agent-workflow's `check` (bun setup -> frozen install ->
+    # format:check -> lint -> typecheck -> test) across ubuntu + macOS.
+    name: Lint + Typecheck + Test (TS — activates when code lands)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Probe for TypeScript project
+        id: probe
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            echo "ts=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "ts=no" >> "$GITHUB_OUTPUT"
+            echo "No package.json yet — skipping TS checks (docs-only phase)."
+          fi
+
+      - name: Setup Bun
+        if: steps.probe.outputs.ts == 'yes'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.x'
+
+      - name: Cache bun package downloads
+        if: steps.probe.outputs.ts == 'yes'
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        if: steps.probe.outputs.ts == 'yes'
+        run: bun install --frozen-lockfile
+
+      - name: Format check
+        if: steps.probe.outputs.ts == 'yes'
+        run: bun run format:check
+
+      - name: Lint
+        if: steps.probe.outputs.ts == 'yes'
+        run: bun run lint
+
+      - name: Typecheck
+        if: steps.probe.outputs.ts == 'yes'
+        run: bun run typecheck
+
+      - name: Test
+        if: steps.probe.outputs.ts == 'yes'
+        run: bun test
