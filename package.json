@@ -1,0 +1,26 @@
+{
+  "name": "lantern",
+  "version": "0.0.0",
+  "description": "AI environment problem-localization assistant for SSH-only isolated environments",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "lint": "oxlint src tests",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "ssh2": "^1.16.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/ssh2": "^1.15.5",
+    "oxlint": "^1.0.0",
+    "prettier": "3.4.2"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
