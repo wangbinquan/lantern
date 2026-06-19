@@ -1,0 +1,12 @@
+export { buildLogs, buildState, shellQuote, CommandError, type LogsFlags } from "./commands";
+export { SessionPool, type FactoryMaker } from "./pool";
+export { dispatch, type DispatchDeps } from "./dispatch";
+export { fileAuditSink, type AuditEntry, type AuditSink } from "./audit";
+export type {
+  RpcRequest,
+  RpcResponse,
+  RpcMethod,
+  RpcOk,
+  RpcErr,
+  RunResultPayload,
+} from "./protocol";
