@@ -13,6 +13,7 @@ export type RpcMethod =
   | "env.current"
   | "logs"
   | "state"
+  | "snapshot"
   | "exec";
 
 export interface RpcRequest {

@@ -8,7 +8,7 @@ import type { Registry } from "../registry";
 import type { RunResult } from "../ssh";
 import type { EnvDescriptor, ServiceDescriptor } from "../types";
 import type { AuditSink } from "./audit";
-import { buildLogs, buildState, type LogsFlags } from "./commands";
+import { buildLogs, buildSnapshot, buildState, type LogsFlags } from "./commands";
 import type { SessionPool } from "./pool";
 import type { RpcRequest, RpcResponse } from "./protocol";
 
@@ -126,6 +126,15 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
       const command = buildState(svc, env.form);
       const r = await deps.pool.run(env.id, command, numOpt(p.timeoutMs));
       record(deps, env.id, "state", command, r);
+      return { stdout: r.stdout, exitCode: r.exitCode, command };
+    }
+
+    case "snapshot": {
+      const env = resolveEnv(deps, p);
+      const svc = resolveService(env, p);
+      const command = buildSnapshot(svc);
+      const r = await deps.pool.run(env.id, command, numOpt(p.timeoutMs));
+      record(deps, env.id, "snapshot", command, r);
       return { stdout: r.stdout, exitCode: r.exitCode, command };
     }
 

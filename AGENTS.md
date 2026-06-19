@@ -19,8 +19,9 @@ tool. The hardened permission ruleset is in `.opencode/opencode.json`.
   `kubectl`, or shell pipelines — they are denied by `.opencode/opencode.json`.
 - **Read-only first.** `lantern env list|current`, `lantern logs|state|snapshot`
   are read-only-by-construction and auto-run (still displayed). Everything else
-  (`env use`, `exec`, `observe`, `redefine`, `put`, `swap`, `restart`) is a
-  mutation and requires explicit per-command confirmation.
+  (`env use`, `exec`, and the Phase-2 `observe`/`redefine`/`put`/`swap`/`restart`)
+  is a mutation and requires explicit per-command confirmation. Implemented today:
+  `env list/use/current`, `logs`, `state`, `snapshot`, `exec`.
 - **Confirm every mutation individually. Never select "always" on a mutating
   command** (it persists across restarts and widens blast radius). Reads may use
   "always".

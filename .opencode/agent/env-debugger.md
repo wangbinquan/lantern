@@ -21,9 +21,9 @@ operate the environment ONLY through the local `lantern` CLI (which talks to the
   them via `--grep-b64 <base64>` so the command stays clean and auto-approved.
 - Anything else touches the environment and is a MUTATION — it requires explicit
   human confirmation each time:
-  - `lantern observe …` (live watch/trace; can add load/pause a JVM)
   - `lantern exec --env <id> -- <command>` (free-form; lanternd refuses catastrophic ones)
-  - `lantern redefine / put / swap / restart` (Phase 2)
+  - `lantern observe / redefine / put / swap / restart` (Phase 2 — not yet available;
+    until then, live-trace / hot-swap / package-swap go through a confirmed `lantern exec`)
 - NEVER run raw `ssh`, `su`, `kubectl`, or shell pipelines directly — they are
   denied. Everything goes through `lantern`.
 

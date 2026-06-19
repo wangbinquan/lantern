@@ -60,7 +60,7 @@ export function parseCli(argv: string[]): ParsedCli {
     return err(`unknown 'env' subcommand: ${sub ?? "(none)"}`);
   }
 
-  if (cmd === "logs" || cmd === "state" || cmd === "exec") {
+  if (cmd === "logs" || cmd === "state" || cmd === "snapshot" || cmd === "exec") {
     const { flags, after } = parseFlags(rest);
     const params: Record<string, unknown> = {};
     if (flags.env) params.envId = flags.env;
@@ -79,8 +79,8 @@ export function parseCli(argv: string[]): ParsedCli {
         return err("usage: lantern logs --service <name> [--env <id>] [--grep G] [--tail N]");
     }
 
-    if (cmd === "state") {
-      if (!params.service) return err("usage: lantern state --service <name> [--env <id>]");
+    if (cmd === "state" || cmd === "snapshot") {
+      if (!params.service) return err(`usage: lantern ${cmd} --service <name> [--env <id>]`);
     }
 
     if (cmd === "exec") {

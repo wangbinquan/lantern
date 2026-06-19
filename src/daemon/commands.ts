@@ -80,3 +80,23 @@ export function buildState(service: ServiceDescriptor, form: EnvForm): string {
   if (service.locate?.pid) return `${service.locate.pid} | head -n 50`;
   return `ps -ef | grep -- ${shellQuote(service.name)} | grep -v grep`;
 }
+
+/**
+ * Passive one-shot diagnostic snapshot (design.md §7 "被动快照", read-only): a
+ * thread dump / py-spy dump / proc status of the live process. The pid is
+ * resolved on the REMOTE via locate.pid (a `$(...)` here is fine — it runs on
+ * the env shell, not in opencode's bash gate).
+ */
+export function buildSnapshot(service: ServiceDescriptor): string {
+  const pidCmd = service.locate?.pid;
+  if (!pidCmd) throw new CommandError(`service "${service.name}": snapshot needs locate.pid`);
+  const pid = `$(${pidCmd} | head -n 1)`;
+  switch (service.runtime) {
+    case "jvm":
+      return `jstack ${pid}`;
+    case "python":
+      return `py-spy dump --pid ${pid}`;
+    case "go":
+      return `cat /proc/${pid}/status`; // passive; full goroutine dump needs observe/dlv (Phase 2)
+  }
+}
