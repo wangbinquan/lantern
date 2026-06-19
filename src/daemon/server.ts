@@ -1,0 +1,64 @@
+/**
+ * lanternd unix-socket server: NDJSON request/response framing around dispatch().
+ * Local socket only (~/.lantern/lanternd.sock) — nothing listens on the network,
+ * honoring the env's no-extra-port constraint (the socket is on the operator box).
+ */
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { dirname } from "node:path";
+import { dispatch, type DispatchDeps } from "./dispatch";
+import type { RpcResponse } from "./protocol";
+
+export class Daemon {
+  private listener?: { stop: (closeActive?: boolean) => void };
+  private socketPath?: string;
+
+  constructor(private readonly deps: DispatchDeps) {}
+
+  listen(socketPath: string): void {
+    mkdirSync(dirname(socketPath), { recursive: true });
+    if (existsSync(socketPath)) rmSync(socketPath); // clear a stale socket
+    this.socketPath = socketPath;
+    const deps = this.deps;
+    const buffers = new WeakMap<object, string>();
+
+    this.listener = Bun.listen({
+      unix: socketPath,
+      socket: {
+        data(socket, chunk: Buffer) {
+          const text = (buffers.get(socket) ?? "") + chunk.toString("utf8");
+          const lines = text.split("\n");
+          buffers.set(socket, lines.pop() ?? ""); // keep the partial last line
+          for (const line of lines) {
+            if (line.trim().length === 0) continue;
+            void respond(deps, line).then((resp) => socket.write(JSON.stringify(resp) + "\n"));
+          }
+        },
+      },
+    });
+  }
+
+  stop(): void {
+    this.listener?.stop(true);
+    this.listener = undefined;
+    if (this.socketPath && existsSync(this.socketPath)) rmSync(this.socketPath);
+  }
+}
+
+async function respond(deps: DispatchDeps, line: string): Promise<RpcResponse> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch (e) {
+    return { id: 0, ok: false, error: `bad request JSON: ${(e as Error).message}` };
+  }
+  const req = parsed as { id?: number; method?: string; params?: Record<string, unknown> };
+  if (typeof req.method !== "string") {
+    return { id: req.id ?? 0, ok: false, error: "missing request method" };
+  }
+  // dispatch validates the method name itself.
+  return dispatch(deps, {
+    id: req.id ?? 0,
+    method: req.method as never,
+    params: req.params,
+  });
+}

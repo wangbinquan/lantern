@@ -5,7 +5,15 @@
  */
 import type { EnvSummary } from "../registry";
 
-export type RpcMethod = "ping" | "env.list" | "env.use" | "env.current" | "logs" | "state" | "exec";
+export type RpcMethod =
+  | "ping"
+  | "env.add"
+  | "env.list"
+  | "env.use"
+  | "env.current"
+  | "logs"
+  | "state"
+  | "exec";
 
 export interface RpcRequest {
   id: number;

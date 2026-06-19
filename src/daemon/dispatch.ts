@@ -80,6 +80,17 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
     case "ping":
       return { pong: true };
 
+    case "env.add": {
+      if (!p.env || typeof p.env !== "object") throw new Error("env.add needs an `env` descriptor");
+      deps.registry.upsertEnv(p.env as EnvDescriptor); // upsertEnv validates via zod
+      if (p.secrets && typeof p.secrets === "object") {
+        for (const [ref, value] of Object.entries(p.secrets as Record<string, unknown>)) {
+          deps.registry.setSecret(ref, String(value));
+        }
+      }
+      return { id: (p.env as EnvDescriptor).id };
+    }
+
     case "env.list":
       return { environments: deps.registry.listEnvs() };
 

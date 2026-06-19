@@ -2,6 +2,8 @@ export { buildLogs, buildState, shellQuote, CommandError, type LogsFlags } from 
 export { SessionPool, type FactoryMaker } from "./pool";
 export { dispatch, type DispatchDeps } from "./dispatch";
 export { fileAuditSink, type AuditEntry, type AuditSink } from "./audit";
+export { Daemon } from "./server";
+export { defaultSocketPath, defaultAuditPath, defaultRegistryDbPath } from "./paths";
 export type {
   RpcRequest,
   RpcResponse,

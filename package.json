@@ -4,6 +4,10 @@
   "description": "AI environment problem-localization assistant for SSH-only isolated environments",
   "private": true,
   "type": "module",
+  "bin": {
+    "lantern": "src/cli/lantern.ts",
+    "lanternd": "src/cli/lanternd.ts"
+  },
   "scripts": {
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",

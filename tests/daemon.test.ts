@@ -222,4 +222,24 @@ describe("dispatch", () => {
     const pool = new SessionPool(registry, () => localFactory());
     expect(() => pool.get("ghost")).toThrow(/unknown environment/);
   });
+
+  test("env.add registers a descriptor + secrets (validated)", async () => {
+    const registry = new Registry(":memory:");
+    const pool = new SessionPool(registry, () => localFactory());
+    const deps: DispatchDeps = { registry, pool };
+    const env: EnvDescriptor = {
+      id: "envNew",
+      form: "k8s",
+      bastion: { host: "h", loginUser: "low", auth: { type: "password", secretRef: "envNew/low" } },
+    };
+    const r = await dispatch(deps, REQ("env.add", { env, secrets: { "envNew/low": "pw-low" } }));
+    expect(r.ok).toBe(true);
+    expect(registry.getEnv("envNew")?.id).toBe("envNew");
+    expect(registry.getSecret("envNew/low")).toBe("pw-low");
+
+    // invalid descriptor is rejected
+    const bad = await dispatch(deps, REQ("env.add", { env: { id: "x" } }));
+    expect(bad.ok).toBe(false);
+    await pool.releaseAll();
+  });
 });
