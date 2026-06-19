@@ -80,6 +80,8 @@
 
 ## 6. 范围与分期
 
+> **实现状态(2026-06)**:MVP 已落地于 `src/`(TypeScript/Bun,177 tests,CI 绿)——PTY 标记/expect、读改分类器、SessionManager 多跳/su 编排、ssh2 传输、SQLite 注册表、lanternd+lantern(socket RPC)、opencode 加固权限配置。`connectSsh2` 需活动 sshd(受控 e2e)。存储/复现回路/Web 控制台属 Phase 2。
+
 ### MVP (Phase 1) — 日志 + 在线诊断,跑通"连接→取证→定位"
 - 环境注册表(工作区之外)+ 环境描述符 schema。
 - `lanternd` 守护进程(多跳/su PTY、逐命令标记、重连、脱敏、TTL/锁)+ `lantern` CLI(瘦客户端)。
