@@ -1,0 +1,25 @@
+# --- secrets / credentials (Lantern will hold env passwords — never commit) ---
+.env
+.env.*
+*.local
+/secrets/
+*.secret
+*.pem
+*.key
+
+# --- runtime / output ---
+*.log
+logs/
+/audit/*.jsonl
+
+# --- dependencies / build (TS/Bun planned) ---
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# --- os / editor ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
