@@ -83,7 +83,7 @@ env:
       viaUser: "jump"                         # 先 su 到指定跳板用户
       viaSecretRef: "env-A/jump"
       sshSecretRef: "env-A/node12-ssh"
-      then: [ { type: "su", user: "high", secretRef: "env-A/high" } ]
+      escalate: [ { type: "su", user: "high", secretRef: "env-A/high" } ]   # 落地内网节点后的提权
   session: { ttlSec: 1800, idleSec: 600 }     # 高权 PTY 生命周期(见 §4.4)
   services:
     - name: "order-svc"

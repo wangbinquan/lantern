@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Fake `su` for SessionManager tests. Prompts for a password and, on the
+# expected value (pw-<user>), execs a fresh shell tagged LANTERN_WHO=<user> so
+# the orchestration can verify the "switched" identity without real privileges.
+set -u
+user="$1"
+[ "$user" = "-" ] && user="${2:-}"
+printf 'Password: '
+IFS= read -r pw || true
+if [ "$pw" = "pw-${user}" ]; then
+  export LANTERN_WHO="$user"
+  exec bash --norc --noprofile
+fi
+printf 'su: Authentication failure\n' >&2
+exit 1

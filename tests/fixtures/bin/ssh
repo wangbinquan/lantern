@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Fake `ssh` for SessionManager tests. The last arg is the host; prompts for a
+# password and, on sshpw-<host>, execs a fresh shell tagged
+# LANTERN_WHO=remote@<host> (simulates landing on the internal node).
+set -u
+host=""
+for a in "$@"; do host="$a"; done
+printf "%s's password: " "$host"
+IFS= read -r pw || true
+if [ "$pw" = "sshpw-${host}" ]; then
+  export LANTERN_WHO="remote@${host}"
+  exec bash --norc --noprofile
+fi
+printf 'Permission denied\n' >&2
+exit 1
