@@ -12,7 +12,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "ssh2": "^1.16.0"
+    "ssh2": "^1.16.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bun": "latest",
