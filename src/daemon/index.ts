@@ -34,6 +34,13 @@ export {
   type SwapPreview,
 } from "./swap";
 export {
+  buildObserve,
+  OBSERVE_OPS,
+  ObserveError,
+  type ObserveOp,
+  type ObserveOpts,
+} from "./observe";
+export {
   EventBus,
   connectionChain,
   type WatchEvent,
