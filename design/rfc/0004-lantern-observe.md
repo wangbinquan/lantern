@@ -1,6 +1,6 @@
 # RFC-0004: `lantern observe` — 只读侵入式诊断(Arthas)
 
-- **Status**: Draft
+- **Status**: Implemented (2026-06-20)
 - **Date**: 2026-06-20
 - **Author**: Lantern
 - **Relates**: `design.md` §7(snapshot vs observe)、`classify`(arthas 只读/改动动词集)、`review-followups` #5(观测分级)、RFC-0001(watch)
@@ -86,8 +86,17 @@ Arthas 输出打到 stdout;`--class`/`--method`/`--op` 必填。
 3. 文档(README/AGENTS、RFC→Implemented)+ smoke(LOCAL_SHELL:用 stub launcher 验证 pid 解析 +
    命令构造 + 发布到 watch)。
 
-## 9. Unresolved questions
+## 9. Unresolved questions(后续)
 
 - 观测分级白名单(snapshot vs observe 的确切 Arthas 动词划分)由运维拍板;本 RFC 取保守只读集。
 - 挂起/detach 清理(远端 `timeout`、`observe --stop`)。
 - Python/Go observe。
+
+## 10. Implementation notes
+
+- **真实 Arthas 需真 JVM + arthas jar**,CI/smoke 不具备;smoke 用假 jar 验证了
+  **命令构造**(pid 解析→固定表达式→`--batch-mode`→`; stop`)、**只读拦截**(`--op redefine` →
+  `unknown op` 拒绝)、**watch 可见**(observe 命令+exit 流进 watch 窗口)。假 jar 下 `java` 报
+  `Invalid or corrupt jarfile`,符合预期。
+- **不自动放行**:observe 落 opencode `bash * → ask`(read-only allow 集未含 observe),逐条确认。
+- 挂起/detach 风险见 §6,v1 不内置远端 `timeout`(macOS 测试不可移植)。

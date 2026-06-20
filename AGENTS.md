@@ -29,10 +29,11 @@ tool. The hardened permission ruleset is in `.opencode/opencode.json`.
 - **Read-only first.** `lantern env list|current`, `lantern logs|state|snapshot`
   are read-only-by-construction and auto-run (still displayed). Everything else
   (`env use`, `exec`, `put`/`restart`/`swap`, and the Phase-2 `observe`/`redefine`)
-  is a mutation and requires explicit per-command confirmation. Implemented today:
-  `env list/use/current/init`, `logs`, `state`, `snapshot`, `exec`, `watch`,
-  `put`, `restart`, `swap` (= backup→upload→restart→health→rollback; `--dry-run` previews,
-  `lantern watch` shows the internals).
+  is a mutation/intrusive op and requires explicit per-command confirmation.
+  Implemented today: `env list/use/current/init`, `logs`, `state`, `snapshot`, `exec`,
+  `watch`, `put`, `restart`, `swap` (= backup→upload→restart→health→rollback; `--dry-run`
+  previews), `observe` (intrusive read-only Arthas watch/trace/stack/tt — confirmed, not
+  auto-run; `lantern watch` shows internals for both swap and observe).
 - **Confirm every mutation individually. Never select "always" on a mutating
   command** (it persists across restarts and widens blast radius). Reads may use
   "always".
