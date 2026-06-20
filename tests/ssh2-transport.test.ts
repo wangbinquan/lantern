@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import type { PtyTransport } from "../src/pty";
 import {
   makeBastionFactory,
@@ -156,5 +157,18 @@ describe("makeHostVerifier (Codex H1)", () => {
   });
   test("normalizeFingerprint strips SHA256:/colons + lowercases", () => {
     expect(normalizeFingerprint("SHA256:AB:CD")).toBe("abcd");
+  });
+  test("normalizeFingerprint converts base64 SHA256 to hex (RFC-0002 manual paste)", () => {
+    const digest = createHash("sha256").update("x").digest();
+    expect(normalizeFingerprint(`SHA256:${digest.toString("base64").replace(/=+$/, "")}`)).toBe(
+      digest.toString("hex"),
+    );
+    expect(normalizeFingerprint(digest.toString("hex").toUpperCase())).toBe(digest.toString("hex"));
+  });
+  test("matches a base64-pinned fingerprint against a hex-presented key", () => {
+    const digest = createHash("sha256").update("k").digest();
+    const verify = makeHostVerifier(`SHA256:${digest.toString("base64").replace(/=+$/, "")}`);
+    expect(verify(digest.toString("hex"))).toBe(true);
+    expect(verify("00".repeat(32))).toBe(false);
   });
 });

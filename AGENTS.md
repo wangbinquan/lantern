@@ -8,8 +8,9 @@ tool. The hardened permission ruleset is in `.opencode/opencode.json`.
 ## Setup (operator, once)
 1. Start the daemon: `bun src/cli/lanternd.ts` (or the installed `lanternd`).
    Sessions hold the multi-hop/su PTY; registry + secrets live in `~/.lantern/`.
-2. Register an environment (descriptor + secrets) — stdin JSON:
-   `echo '{"env": {…descriptor…}, "secrets": {"env-A/low":"…"}}' | lantern env add`
+2. Register an environment. **Interactive (recommended):** `lantern env init <id>`
+   — prompts for the hop/su chain + services, hidden passwords → keychain, host
+   key auto-pinned (TOFU). **Scripted:** `echo '{"env":{…}, "secrets":{…}}' | lantern env add`.
 3. Point opencode at an internal LLM gateway in `.opencode/opencode.json`
    (`provider`/`model` with the OpenAI/Anthropic-compatible `baseURL` + key).
 4. Run opencode (`opencode serve` + TUI) with `--password` bound to loopback.

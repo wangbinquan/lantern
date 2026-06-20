@@ -26,13 +26,21 @@ export interface Ssh2Config {
   insecureHostKey?: boolean;
 }
 
-/** Normalize a SHA-256 fingerprint: drop `SHA256:`/colons, lowercase. */
+/**
+ * Normalize a SHA-256 fingerprint to lowercase hex so a pinned value and ssh2's
+ * `hostHash:"sha256"` (hex) compare equal — whether the operator pinned hex (our
+ * auto path) or pasted the familiar `SHA256:<base64>` form (RFC-0002).
+ */
 export function normalizeFingerprint(s: string): string {
-  return s
-    .replace(/^sha256:/i, "")
-    .replace(/:/g, "")
-    .trim()
-    .toLowerCase();
+  const stripped = s.replace(/^sha256:/i, "").trim();
+  const hex = stripped.replace(/:/g, "").toLowerCase();
+  if (/^[0-9a-f]{64}$/.test(hex)) return hex; // already hex
+  const b64 = stripped.replace(/=+$/, "");
+  if (/^[A-Za-z0-9+/]{43}$/.test(b64)) {
+    // base64 SHA-256 (what `ssh-keygen -l` / the ssh prompt show) → hex
+    return Buffer.from(b64, "base64").toString("hex");
+  }
+  return hex;
 }
 
 /**
