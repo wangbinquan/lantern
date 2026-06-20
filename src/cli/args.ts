@@ -89,6 +89,28 @@ export function parseCli(argv: string[]): ParsedCli {
     return { kind: "rpc", method: "watch", params };
   }
 
+  if (cmd === "put" || cmd === "restart" || cmd === "swap") {
+    const { flags, positional } = parseFlags(rest);
+    if (positional.length > 0) return err(`unexpected argument(s): ${positional.join(" ")}`);
+    const params: Record<string, unknown> = {};
+    if (flags.env) params.envId = flags.env;
+    if (flags.service) params.service = flags.service;
+    if (flags.timeout) params.timeoutMs = Number(flags.timeout);
+    if (flags["chunk-size"]) params.chunkSize = Number(flags["chunk-size"]);
+    if (!params.service) return err(`usage: lantern ${cmd} --service <name> [--env <id>]`);
+    if (cmd === "put" || cmd === "swap") {
+      if (!flags.file) {
+        return err(`usage: lantern ${cmd} --service <name> --file <local-artifact> [--env <id>]`);
+      }
+      params.file = flags.file;
+    }
+    if (cmd === "swap") {
+      if (flags["dry-run"]) params.dryRun = true;
+      if (flags["no-rollback"]) params.rollback = false;
+    }
+    return { kind: "rpc", method: cmd, params };
+  }
+
   if (cmd === "logs" || cmd === "state" || cmd === "snapshot" || cmd === "exec") {
     const { flags, after, positional } = parseFlags(rest);
     if (positional.length > 0) return err(`unexpected argument(s): ${positional.join(" ")}`);
@@ -138,7 +160,11 @@ Usage:
   lantern state  --service <name> [--env <id>]
   lantern exec   [--env <id>] (--command '<cmd>' | -- <cmd> ...)
   lantern watch  [--env <id>] [--no-output]   # read-only live mirror of env activity
+  lantern put     --service <name> --file <local> [--env <id>] [--chunk-size N]
+  lantern restart --service <name> [--env <id>]
+  lantern swap    --service <name> --file <local> [--dry-run] [--no-rollback] [--env <id>]
 
 Read subcommands (env list/current, logs, state) are read-only by construction.
+put/restart/swap are MUTATING (each requires confirmation); swap = backup→upload→restart→health→rollback.
 exec is classified by lanternd; catastrophic commands are refused.
 Socket: $LANTERN_SOCK or ~/.lantern/lanternd.sock`;

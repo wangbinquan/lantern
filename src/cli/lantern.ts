@@ -83,8 +83,16 @@ if (parsed.method === "watch") {
 
   if (parsed.method === "ping") {
     process.stdout.write("pong\n");
-  } else if (parsed.method.startsWith("env.")) {
+  } else if (
+    parsed.method.startsWith("env.") ||
+    parsed.method === "put" ||
+    parsed.method === "restart" ||
+    parsed.method === "swap"
+  ) {
     process.stdout.write(JSON.stringify(resp.result, null, 2) + "\n");
+    // swap exits non-zero when it didn't end healthy (e.g. rolled back).
+    const res = resp.result as { swapped?: boolean };
+    process.exit(res.swapped === false ? 1 : 0);
   } else {
     const r = resp.result as RunResultPayload;
     // Surface the EXPANDED remote command so the operator sees what actually ran

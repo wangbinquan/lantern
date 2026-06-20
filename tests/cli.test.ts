@@ -79,6 +79,29 @@ describe("parseCli", () => {
     expect(parseCli(["logs", "--service", "svc"]).kind).toBe("rpc");
     expect(parseCli(["exec", "--env", "E", "--", "echo", "hi"]).kind).toBe("rpc");
   });
+
+  test("put/restart/swap parse (RFC-0003)", () => {
+    expect(parseCli(["put", "--service", "x", "--file", "a.jar"])).toEqual({
+      kind: "rpc",
+      method: "put",
+      params: { service: "x", file: "a.jar" },
+    });
+    expect(parseCli(["restart", "--service", "x"])).toEqual({
+      kind: "rpc",
+      method: "restart",
+      params: { service: "x" },
+    });
+    expect(
+      parseCli(["swap", "--service", "x", "--file", "a.jar", "--dry-run", "--no-rollback"]),
+    ).toEqual({
+      kind: "rpc",
+      method: "swap",
+      params: { service: "x", file: "a.jar", dryRun: true, rollback: false },
+    });
+    // missing required flags
+    expect(parseCli(["put", "--service", "x"]).kind).toBe("error"); // no --file
+    expect(parseCli(["swap", "--file", "a.jar"]).kind).toBe("error"); // no --service
+  });
 });
 
 describe("unix socket round-trip (Daemon <-> rpc client)", () => {
