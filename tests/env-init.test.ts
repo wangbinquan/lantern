@@ -1,7 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { buildEnvInitPlan, type EnvInitAnswers } from "../src/cli/env-init-plan";
+import { type EnvInitDeps, runEnvInit } from "../src/cli/env-init";
+import type { Asker } from "../src/cli/prompt";
 import { EnvDescriptorSchema } from "../src/registry";
 import type { EnvDescriptor } from "../src/types";
+
+function scriptedAsker(answers: string[]): Asker {
+  let i = 0;
+  return () => Promise.resolve(answers[i++] ?? "");
+}
+
+interface AddParams {
+  env: EnvDescriptor;
+  secrets: Record<string, string>;
+}
 
 function refsOf(env: EnvDescriptor): string[] {
   const s = new Set<string>();
@@ -154,5 +166,85 @@ describe("buildEnvInitPlan (RFC-0002 slice 1)", () => {
     expect(() =>
       buildEnvInitPlan({ ...base, bastion: { ...base.bastion, host: "h$(id)" } }),
     ).toThrow();
+  });
+});
+
+describe("runEnvInit flow (RFC-0002 slice 4)", () => {
+  function captureDeps(answers: string[], over: Partial<EnvInitDeps> = {}) {
+    const sent: { method: string; params: Record<string, unknown> }[] = [];
+    const deps: EnvInitDeps = {
+      asker: scriptedAsker(answers),
+      fetchFingerprint: () => ({
+        hex: "deadbeefhex",
+        display: "SHA256:Zm9v",
+        keyType: "ssh-ed25519",
+      }),
+      send: (method, params) => {
+        sent.push({ method, params });
+        return Promise.resolve({ ok: true });
+      },
+      log: () => {},
+      ...over,
+    };
+    return { sent, deps };
+  }
+
+  test("password bastion + host-key auto-pin + one service → env.add then env.use", async () => {
+    // ordered answers: label, form, host, port, user, authKind, password,
+    //   confirm-pin, su(none), confirm-hops(n), confirm-add-svc(default y),
+    //   svc name, runtime, pid, logfile, confirm-add-svc(n)
+    const { sent, deps } = captureDeps([
+      "",
+      "",
+      "h",
+      "",
+      "ops",
+      "",
+      "pw-ops",
+      "",
+      "",
+      "n",
+      "",
+      "order-svc",
+      "",
+      "pgrep -f order",
+      "",
+      "n",
+    ]);
+    await runEnvInit("prod-a", {}, deps);
+
+    expect(sent.map((s) => s.method)).toEqual(["env.add", "env.use"]);
+    const add = sent[0]!.params as unknown as AddParams;
+    expect(add.env.bastion).toMatchObject({
+      host: "h",
+      loginUser: "ops",
+      port: 22,
+      hostKeySha256: "deadbeefhex",
+    });
+    expect(add.env.bastion.auth.type).toBe("password");
+    expect(add.secrets[add.env.bastion.auth.secretRef!]).toBe("pw-ops");
+    expect(add.env.services?.[0]).toMatchObject({
+      name: "order-svc",
+      runtime: "jvm",
+      locate: { pid: "pgrep -f order" },
+    });
+    expect(sent[1]!.params).toEqual({ id: "prod-a" });
+  });
+
+  test("--insecure-host-key skips the fetch + pin; --no-use skips env.use", async () => {
+    const { sent, deps } = captureDeps(
+      ["", "", "h", "", "ops", "", "pw", "", "n", "n"], // no host-key Qs, no su/hop/svc
+      {
+        fetchFingerprint: () => {
+          throw new Error("must not fetch when --insecure-host-key");
+        },
+      },
+    );
+    await runEnvInit("e", { insecureHostKey: true, noUse: true }, deps);
+
+    expect(sent.map((s) => s.method)).toEqual(["env.add"]);
+    const add = sent[0]!.params as unknown as AddParams;
+    expect(add.env.bastion.insecureHostKey).toBe(true);
+    expect(add.env.bastion.hostKeySha256).toBeUndefined();
   });
 });

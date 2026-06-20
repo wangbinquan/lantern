@@ -8,6 +8,7 @@ import type { RpcMethod } from "../daemon";
 
 export type ParsedCli =
   | { kind: "rpc"; method: RpcMethod; params: Record<string, unknown> }
+  | { kind: "init"; id: string; opts: { insecureHostKey?: boolean; noUse?: boolean } }
   | { kind: "help" }
   | { kind: "error"; message: string };
 
@@ -61,6 +62,20 @@ export function parseCli(argv: string[]): ParsedCli {
       const id = rest[1];
       if (!id) return err("usage: lantern env use <id>");
       return { kind: "rpc", method: "env.use", params: { id } };
+    }
+    if (sub === "init") {
+      const id = rest[1];
+      if (!id) return err("usage: lantern env init <id> [--insecure-host-key] [--no-use]");
+      const { flags, positional } = parseFlags(rest.slice(2));
+      if (positional.length > 0) return err(`unexpected argument(s): ${positional.join(" ")}`);
+      return {
+        kind: "init",
+        id,
+        opts: {
+          insecureHostKey: flags["insecure-host-key"] === "true",
+          noUse: flags["no-use"] === "true",
+        },
+      };
     }
     return err(`unknown 'env' subcommand: ${sub ?? "(none)"}`);
   }
@@ -116,6 +131,7 @@ export const HELP = `lantern — operate an isolated environment through lantern
 Usage:
   lantern ping
   lantern env list
+  lantern env init <id> [--insecure-host-key] [--no-use]   # 交互式接环境向导
   lantern env use <id>
   lantern env current
   lantern logs   --service <name> [--env <id>] [--grep G | --grep-b64 B64] [--tail N] [--since 5m] [--limit-bytes N] [--container C]

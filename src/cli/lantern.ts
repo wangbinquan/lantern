@@ -8,6 +8,7 @@ import { defaultSocketPath, defaultTokenPath, type RunResultPayload } from "../d
 import { HELP, parseCli } from "./args";
 import { rpc, watchStream } from "./client";
 import { renderWatchEvent } from "./watch-render";
+import { runEnvInitCli } from "./env-init";
 
 const parsed = parseCli(process.argv.slice(2));
 if (parsed.kind === "help") {
@@ -17,6 +18,24 @@ if (parsed.kind === "help") {
 if (parsed.kind === "error") {
   process.stderr.write(`lantern: ${parsed.message}\n`);
   process.exit(2);
+}
+
+let token: string | undefined;
+try {
+  token = readFileSync(defaultTokenPath(), "utf8").trim() || undefined;
+} catch {
+  token = undefined; // daemon may be running without a token
+}
+
+if (parsed.kind === "init") {
+  // Interactive onboarding wizard (RFC-0002) — collects answers, ships env.add.
+  try {
+    await runEnvInitCli(parsed.id, parsed.opts, token);
+  } catch (e) {
+    process.stderr.write(`lantern env init: ${(e as Error).message}\n`);
+    process.exit(1);
+  }
+  process.exit(0);
 }
 
 const params = { ...parsed.params };
@@ -31,13 +50,6 @@ if (parsed.method === "env.add") {
     );
     process.exit(2);
   }
-}
-
-let token: string | undefined;
-try {
-  token = readFileSync(defaultTokenPath(), "utf8").trim() || undefined;
-} catch {
-  token = undefined; // daemon may be running without a token
 }
 
 if (parsed.method === "watch") {

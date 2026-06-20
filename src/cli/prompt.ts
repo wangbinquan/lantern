@@ -51,8 +51,32 @@ export const v = {
     /^\d+$/.test(s) && Number(s) > 0 && Number(s) < 65536 ? null : "invalid port",
 };
 
+/**
+ * Pipe-safe asker for non-interactive stdin (scripts/smoke): read ALL of stdin
+ * once and dispense one line per question. Avoids readline dropping piped lines
+ * between question() calls.
+ */
+function makePipedAsker(): { ask: Asker; close: () => void } {
+  let lines: string[] | null = null;
+  let idx = 0;
+  const asker: Asker = async (question) => {
+    process.stderr.write(question);
+    if (lines === null) {
+      const text = await Bun.stdin.text();
+      lines = text.split("\n");
+      if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop(); // trailing newline
+    }
+    const line = idx < lines.length ? lines[idx++]! : "";
+    process.stderr.write(`${line}\n`);
+    return line;
+  };
+  return { ask: asker, close: () => {} };
+}
+
 /** Real terminal asker: one readline, with muted echo for secret prompts. */
 export function makeTtyAsker(): { ask: Asker; close: () => void } {
+  if (!process.stdin.isTTY) return makePipedAsker();
+
   const out = new (class extends Writable {
     muted = false;
     override _write(chunk: Buffer, _enc: BufferEncoding, cb: () => void): void {
