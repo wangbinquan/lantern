@@ -20,6 +20,33 @@ export interface Ssh2Config {
   privateKey?: string;
   passphrase?: string;
   readyTimeoutMs?: number;
+  /** Pinned SHA-256 host-key fingerprint (hex). */
+  hostKeySha256?: string;
+  /** Skip host-key verification (INSECURE — dev only). */
+  insecureHostKey?: boolean;
+}
+
+/** Normalize a SHA-256 fingerprint: drop `SHA256:`/colons, lowercase. */
+export function normalizeFingerprint(s: string): string {
+  return s
+    .replace(/^sha256:/i, "")
+    .replace(/:/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Build an ssh2 hostVerifier (Codex H1). Fail-closed: with no pinned fingerprint
+ * and no explicit insecure opt-in, every key is rejected.
+ */
+export function makeHostVerifier(
+  expectedSha256?: string,
+  insecure?: boolean,
+): (hashedKey: string) => boolean {
+  if (insecure) return () => true;
+  if (!expectedSha256) return () => false;
+  const want = normalizeFingerprint(expectedSha256);
+  return (hashedKey: string) => normalizeFingerprint(hashedKey) === want;
 }
 
 // Wide PTY + dumb term + ECHO off keep the stream clean: no line-wrap newlines,
@@ -104,6 +131,8 @@ export function connectSsh2(cfg: Ssh2Config): Promise<PtyTransport> {
       passphrase: cfg.passphrase,
       readyTimeout: cfg.readyTimeoutMs ?? 20_000,
       keepaliveInterval: 15_000,
+      hostHash: "sha256",
+      hostVerifier: makeHostVerifier(cfg.hostKeySha256, cfg.insecureHostKey),
     };
     conn.connect(connectCfg);
   });
@@ -126,6 +155,8 @@ export function makeBastionFactory(
       host: bastion.host,
       port: bastion.port ?? 22,
       username: bastion.loginUser,
+      hostKeySha256: bastion.hostKeySha256,
+      insecureHostKey: bastion.insecureHostKey,
     };
     if (bastion.auth.type === "password") {
       if (!bastion.auth.secretRef) {
@@ -140,6 +171,12 @@ export function makeBastionFactory(
       if (bastion.auth.secretRef) {
         cfg.passphrase = await Promise.resolve(resolveSecret(bastion.auth.secretRef));
       }
+    }
+    // Fail closed: require a pinned host key unless explicitly opted out (H1).
+    if (!bastion.insecureHostKey && !bastion.hostKeySha256) {
+      throw new Error(
+        `env "${env.id}": bastion host key not pinned — set bastion.hostKeySha256 or bastion.insecureHostKey`,
+      );
     }
     return connect(cfg);
   };

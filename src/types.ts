@@ -40,6 +40,10 @@ export interface Bastion {
   loginUser: string;
   auth: BastionAuth;
   promptRe?: string;
+  /** Pinned SHA-256 host-key fingerprint (hex; `SHA256:`/colons tolerated). */
+  hostKeySha256?: string;
+  /** Opt-in to skip host-key verification (INSECURE — dev only). */
+  insecureHostKey?: boolean;
 }
 
 export interface SessionPolicy {

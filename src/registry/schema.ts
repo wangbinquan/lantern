@@ -39,6 +39,8 @@ export const BastionSchema = z.object({
   loginUser: USERNAME,
   auth: BastionAuthSchema,
   promptRe: z.string().optional(),
+  hostKeySha256: z.string().optional(),
+  insecureHostKey: z.boolean().optional(),
 });
 
 export const SessionPolicySchema = z.object({

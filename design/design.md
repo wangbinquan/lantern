@@ -75,7 +75,8 @@ env:
   id: "env-A-dev"
   label: "订单域-研发环境A"
   form: "k8s"                 # k8s | proprietary
-  bastion: { host: "1.2.3.4", port: 22, loginUser: "low", auth: { type: "password", secretRef: "env-A/low" } }
+  bastion: { host: "1.2.3.4", port: 22, loginUser: "low", auth: { type: "password", secretRef: "env-A/low" },
+             hostKeySha256: "<pinned sha256 hex>" }   # 必须 pin host key,或 insecureHostKey:true(仅 dev)
   escalate:
     - { type: "su", user: "high", secretRef: "env-A/high", promptRe: "[Pp]assword:" }
   hops:

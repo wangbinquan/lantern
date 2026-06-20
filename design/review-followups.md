@@ -96,7 +96,7 @@
 - **C3 "read-only by construction" 不成立(描述符注入)** — 🔧**已改**:`logs.k8s` 模板与 `locate.pid` 现经分类器校验为只读、**fail-closed**;`snapshot` 改两步解析**数值 PID**(无 `$()`);数据字段 shellQuote。+注入拒绝测试。
 
 ## High
-- **H1 ssh host-key 不校验** — 📝**记录**:`connectSsh2` 未设 `hostVerifier`。需在描述符加期望指纹并 fail-closed(connectSsh2 本就走受控 e2e,未进 CI)。列 Phase 2 安全项。
+- **H1 ssh host-key 不校验** — 🔧**已改**:`connectSsh2` 设 `hostHash:"sha256"` + `hostVerifier`;描述符加 `bastion.hostKeySha256`(pin 指纹,容忍 `SHA256:`/冒号/大小写)。**fail-closed**:未 pin 且未显式 `insecureHostKey:true` → `makeBastionFactory` 抛错拒连。`makeHostVerifier`/`normalizeFingerprint` 纯函数已测;真实握手仍走受控 e2e。
 - **H2 建链期描述符注入(su/ssh)** — 🔧**已改**:`su -`/`ssh` 的 user/host 已 shellQuote + schema 正则校验(无 shell 元字符)。
 - **H3 docker/git 嵌套子命令误判 read** — 🔧**已改**:`docker image`(管理组)/`git config|branch|tag|remote` 移出只读集。
 - **H4 "只读"二进制有写模式** — 🔧**已改**:jmap/jinfo 移出只读(jstack/jps/pgrep/pidof 保留);`sed --in-place`/`w` 拦截;`find -fprint0/-fprintf` 拦截。
