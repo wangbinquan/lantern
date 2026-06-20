@@ -14,3 +14,7 @@ export function defaultAuditPath(): string {
 export function defaultRegistryDbPath(): string {
   return join(root(), "registry.db");
 }
+
+export function defaultTokenPath(): string {
+  return join(root(), "token");
+}

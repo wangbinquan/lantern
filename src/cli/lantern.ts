@@ -3,7 +3,8 @@
  * lantern CLI — parse argv, RPC to lanternd, print the result, exit with the
  * remote command's exit code. This is what opencode's bash tool invokes.
  */
-import { defaultSocketPath, type RunResultPayload } from "../daemon";
+import { readFileSync } from "node:fs";
+import { defaultSocketPath, defaultTokenPath, type RunResultPayload } from "../daemon";
 import { HELP, parseCli } from "./args";
 import { rpc } from "./client";
 
@@ -31,7 +32,14 @@ if (parsed.method === "env.add") {
   }
 }
 
-const resp = await rpc(defaultSocketPath(), { id: 1, method: parsed.method, params });
+let token: string | undefined;
+try {
+  token = readFileSync(defaultTokenPath(), "utf8").trim() || undefined;
+} catch {
+  token = undefined; // daemon may be running without a token
+}
+
+const resp = await rpc(defaultSocketPath(), { id: 1, method: parsed.method, params, token });
 if (!resp.ok) {
   process.stderr.write(`lantern: ${resp.error}\n`);
   process.exit(1);

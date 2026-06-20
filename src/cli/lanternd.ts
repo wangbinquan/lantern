@@ -1,36 +1,56 @@
 #!/usr/bin/env bun
 /**
- * lanternd entrypoint — start the daemon on the local unix socket. Holds the
- * env sessions; the `lantern` CLI talks to it per command.
+ * lanternd entrypoint — start the daemon on the local unix socket. Holds the env
+ * sessions; the `lantern` CLI talks to it per command. Mints a per-start
+ * capability token (Codex C2) and uses the OS keychain for secrets on macOS
+ * (Codex C1).
  */
+import { randomBytes } from "node:crypto";
+import { chmodSync, writeFileSync } from "node:fs";
 import {
   Daemon,
   defaultAuditPath,
   defaultRegistryDbPath,
   defaultSocketPath,
+  defaultTokenPath,
   fileAuditSink,
   SessionPool,
 } from "../daemon";
 import { spawnPty } from "../pty";
-import { Registry } from "../registry";
+import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
 
-const registry = new Registry(defaultRegistryDbPath());
-// LOCAL-SHELL mode: run sessions on THIS machine (a local bash) instead of ssh —
-// for demos / verifying the stack without a reachable bastion. The su/hop chain
-// in the descriptor still drives over that local shell.
 const localShell = process.env.LANTERN_LOCAL_SHELL === "1";
+
+// Secrets in the OS keychain on macOS so they never touch a file opencode can
+// read (Codex C1); fall back to the registry sqlite (0700/0600) elsewhere.
+const useKeychain = !localShell && keychainAvailable();
+const registry = new Registry(
+  defaultRegistryDbPath(),
+  useKeychain ? new KeychainSecretStore() : undefined,
+);
+
 const pool = localShell
   ? new SessionPool(registry, () => () => spawnPty(["bash", "--norc", "--noprofile"]))
   : new SessionPool(registry);
+
+// Per-start capability token, required on every RPC (Codex C2).
+const token = randomBytes(32).toString("hex");
+const tokenPath = defaultTokenPath();
+writeFileSync(tokenPath, token, { mode: 0o600 });
+chmodSync(tokenPath, 0o600);
+
+const daemon = new Daemon({ registry, pool, audit: fileAuditSink(defaultAuditPath()) }, { token });
+const socketPath = defaultSocketPath();
+
 if (localShell) {
   process.stderr.write(
     "\n⚠️  LANTERN_LOCAL_SHELL=1 — DEV/DEMO MODE: sessions run on THIS machine (no ssh).\n" +
       "    Auto-approved read commands execute locally. Do NOT use against a real environment.\n\n",
   );
 }
-const daemon = new Daemon({ registry, pool, audit: fileAuditSink(defaultAuditPath()) });
-const socketPath = defaultSocketPath();
-
+process.stderr.write(
+  `lanternd: secrets in ${useKeychain ? "OS keychain (service 'lantern')" : "local sqlite (no keychain)"}\n`,
+);
 daemon.listen(socketPath);
 process.stderr.write(`lanternd listening on ${socketPath}\n`);
 

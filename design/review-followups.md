@@ -91,8 +91,8 @@
 对全部 `src/` 代码 + 设计的对抗式评审,处置如下。🔧=已改并加测试 · ✍️=已澄清 · 📝=已记录/后续。
 
 ## Critical
-- **C1 凭据可被 opencode `read:*` 越权读出** — 📝**部分缓解 + 待治理**:凭据移到 `~/.lantern`(0700,工作区外,见 C2/H7),且 `external_directory:deny`;但 opencode `read` 工具对绝对路径可能不 assert `external_directory`,故**真正边界是 OS 权限**:`~/.lantern` 0700 + db 0600。彻底消除需 keychain/Vault 或"opencode 与 lanternd 用不同 OS 用户"——已记入 design/§11,Phase 2 落地。
-- **C2 unix socket 无认证** — 🔧**部分**:socket 0600 + `~/.lantern` 0700,拦掉**跨用户**进程;**同用户**进程仍可连(研发单机可接受)。能力令牌/`SO_PEERCRED` 记为 Phase 2。
+- **C1 凭据可被 opencode `read:*` 越权读出** — 🔧**已解决(macOS)**:secrets 改存 **OS 钥匙串**(`security`,service `lantern`),**完全不进任何文件**——opencode `read` 读不到(已验证:secret 在钥匙串、registry.db 内 absent)。非 macOS 回退 sqlite(0700/0600)。`SecretStore` 抽象,lanternd 在 macOS 自动启用;Vault/跨平台留 Phase 2。
+- **C2 unix socket 无认证** — 🔧**已加固**:每次启动生成 **256-bit 能力令牌**(`~/.lantern/token`,0600),每条 RPC 必带并校验(无/错令牌→`unauthorized`);socket 0600 + 目录 0700 挡跨用户。同用户进程仍能读令牌文件(研发单机信任边界);per-command 能力 / `SO_PEERCRED` 记 Phase 2。
 - **C3 "read-only by construction" 不成立(描述符注入)** — 🔧**已改**:`logs.k8s` 模板与 `locate.pid` 现经分类器校验为只读、**fail-closed**;`snapshot` 改两步解析**数值 PID**(无 `$()`);数据字段 shellQuote。+注入拒绝测试。
 
 ## High

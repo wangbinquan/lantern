@@ -1,9 +1,9 @@
 /**
  * Environment registry (design.md §3, decision #13): a local bun:sqlite store at
- * ~/.lantern/registry.db — OUTSIDE the opencode workspace so the model's
- * read/grep cannot reach the plaintext credentials (research env; keychain/Vault
- * later behind the same SecretResolver interface). Holds env descriptors,
- * secrets (secretRef → plaintext), and the currently-selected env.
+ * ~/.lantern/registry.db — OUTSIDE the opencode workspace, dir 0700 / db 0600.
+ * Secrets go through an injectable SecretStore (keychain in production so they
+ * never touch the db file — Codex C1); the SQLite `secrets` table is only used
+ * by the fallback store.
  */
 import { Database } from "bun:sqlite";
 import { chmodSync, mkdirSync } from "node:fs";
@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { EnvDescriptor, SecretResolver } from "../types";
 import { EnvDescriptorSchema } from "./schema";
+import { SqliteSecretStore, type SecretStore } from "./secret-store";
 
 export function defaultRegistryPath(): string {
   return join(homedir(), ".lantern", "registry.db");
@@ -31,12 +32,13 @@ export class RegistryError extends Error {
 
 export class Registry {
   private readonly db: Database;
+  private readonly secrets: SecretStore;
 
-  constructor(path: string = defaultRegistryPath()) {
+  constructor(path: string = defaultRegistryPath(), secretStore?: SecretStore) {
     if (path !== ":memory:") {
       const dir = dirname(path);
       mkdirSync(dir, { recursive: true });
-      chmodSync(dir, 0o700); // secrets live here — owner-only (Codex H7)
+      chmodSync(dir, 0o700); // secrets/registry live here — owner-only (Codex H7)
     }
     this.db = new Database(path, { create: true });
     if (path !== ":memory:") chmodSync(path, 0o600);
@@ -46,11 +48,12 @@ export class Registry {
     );
     this.db.run("CREATE TABLE IF NOT EXISTS secrets (ref TEXT PRIMARY KEY, value TEXT NOT NULL)");
     this.db.run("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    // Default to the SQLite-backed store; lanternd injects KeychainSecretStore.
+    this.secrets = secretStore ?? new SqliteSecretStore(this.db);
   }
 
   // ---- environments ----
 
-  /** Validate and upsert a descriptor (throws ZodError on an invalid shape). */
   upsertEnv(desc: EnvDescriptor): void {
     const parsed = EnvDescriptorSchema.parse(desc);
     this.db
@@ -83,30 +86,23 @@ export class Registry {
     return this.db.query("DELETE FROM environments WHERE id = ?").run(id).changes > 0;
   }
 
-  // ---- secrets ----
+  // ---- secrets (delegated to the SecretStore) ----
 
   setSecret(ref: string, value: string): void {
-    this.db
-      .query(
-        "INSERT INTO secrets (ref, value) VALUES (?, ?) ON CONFLICT(ref) DO UPDATE SET value = excluded.value",
-      )
-      .run(ref, value);
+    this.secrets.set(ref, value);
   }
 
   getSecret(ref: string): string | null {
-    const row = this.db.query("SELECT value FROM secrets WHERE ref = ?").get(ref) as {
-      value: string;
-    } | null;
-    return row ? row.value : null;
+    return this.secrets.get(ref);
   }
 
   removeSecret(ref: string): boolean {
-    return this.db.query("DELETE FROM secrets WHERE ref = ?").run(ref).changes > 0;
+    return this.secrets.remove(ref);
   }
 
   /** SecretResolver bound to this registry; throws if a ref is unknown. */
   readonly resolveSecret: SecretResolver = (ref: string) => {
-    const value = this.getSecret(ref);
+    const value = this.secrets.get(ref);
     if (value == null) throw new RegistryError(`no secret stored for ref "${ref}"`);
     return value;
   };

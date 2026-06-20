@@ -12,7 +12,10 @@ export class Daemon {
   private listener?: { stop: (closeActive?: boolean) => void };
   private socketPath?: string;
 
-  constructor(private readonly deps: DispatchDeps) {}
+  constructor(
+    private readonly deps: DispatchDeps,
+    private readonly opts: { token?: string } = {},
+  ) {}
 
   listen(socketPath: string): void {
     const dir = dirname(socketPath);
@@ -21,6 +24,7 @@ export class Daemon {
     if (existsSync(socketPath)) rmSync(socketPath); // clear a stale socket
     this.socketPath = socketPath;
     const deps = this.deps;
+    const token = this.opts.token;
     const buffers = new WeakMap<object, string>();
 
     this.listener = Bun.listen({
@@ -32,7 +36,9 @@ export class Daemon {
           buffers.set(socket, lines.pop() ?? ""); // keep the partial last line
           for (const line of lines) {
             if (line.trim().length === 0) continue;
-            void respond(deps, line).then((resp) => socket.write(JSON.stringify(resp) + "\n"));
+            void respond(deps, line, token).then((resp) =>
+              socket.write(JSON.stringify(resp) + "\n"),
+            );
           }
         },
       },
@@ -47,16 +53,26 @@ export class Daemon {
   }
 }
 
-async function respond(deps: DispatchDeps, line: string): Promise<RpcResponse> {
+async function respond(deps: DispatchDeps, line: string, token?: string): Promise<RpcResponse> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
   } catch (e) {
     return { id: 0, ok: false, error: `bad request JSON: ${(e as Error).message}` };
   }
-  const req = parsed as { id?: number; method?: string; params?: Record<string, unknown> };
+  const req = parsed as {
+    id?: number;
+    method?: string;
+    params?: Record<string, unknown>;
+    token?: string;
+  };
   if (typeof req.method !== "string") {
     return { id: req.id ?? 0, ok: false, error: "missing request method" };
+  }
+  // Capability-token check (Codex C2): when the daemon was started with a token,
+  // every request must present it. Constant-ish comparison; tokens are 256-bit.
+  if (token !== undefined && req.token !== token) {
+    return { id: req.id ?? 0, ok: false, error: "unauthorized: invalid or missing token" };
   }
   // dispatch validates the method name itself.
   return dispatch(deps, {

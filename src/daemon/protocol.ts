@@ -20,6 +20,8 @@ export interface RpcRequest {
   id: number;
   method: RpcMethod;
   params?: Record<string, unknown>;
+  /** Capability token (Codex C2); required when the daemon was started with one. */
+  token?: string;
 }
 
 export interface RpcOk<T = unknown> {
