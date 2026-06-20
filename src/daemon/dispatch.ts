@@ -40,6 +40,17 @@ function numOpt(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined;
 }
 
+/**
+ * Extract a numeric PID from a locate command's output: a line that is ONLY
+ * digits, and only when the command succeeded — so noisy warnings or progress
+ * lines can't yield the wrong PID (Codex M-3).
+ */
+function resolvePid(out: RunResult): string | null {
+  if (out.exitCode !== 0) return null;
+  const m = /(?:^|\n)[ \t]*(\d+)[ \t]*(?:\r?\n|$)/.exec(out.stdout);
+  return m ? m[1]! : null;
+}
+
 function resolveEnv(deps: DispatchDeps, params: Record<string, unknown>): EnvDescriptor {
   const envId = strOpt(params.envId) ?? deps.registry.getCurrent();
   if (!envId) {
@@ -190,7 +201,7 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
       const timeoutMs = numOpt(p.timeoutMs);
       // Step 1: resolve the PID via a classifier-validated read command.
       const pidOut = await deps.pool.run(env.id, locatePidCommand(svc), timeoutMs);
-      const pid = /\d+/.exec(pidOut.stdout)?.[0];
+      const pid = resolvePid(pidOut);
       if (!pid) throw new Error(`snapshot: could not resolve a PID for service "${svc.name}"`);
       // Step 2: passive diagnostic against the validated numeric PID (no $()).
       const command = buildSnapshot(svc, pid);
@@ -300,7 +311,7 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
       const timeoutMs = numOpt(p.timeoutMs);
       // Step 1: resolve a numeric PID (same as snapshot, no $()).
       const pidOut = await deps.pool.run(env.id, locatePidCommand(svc), timeoutMs);
-      const pid = /\d+/.exec(pidOut.stdout)?.[0];
+      const pid = resolvePid(pidOut);
       if (!pid) throw new Error(`observe: could not resolve a PID for service "${svc.name}"`);
       const command = buildObserve(
         svc,

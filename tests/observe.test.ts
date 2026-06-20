@@ -40,13 +40,14 @@ describe("buildObserve (RFC-0004 slice 1)", () => {
     expect(o("tt")).toContain("-c 'tt -t C m -n 3 ; stop'");
   });
 
-  test("count clamps to 1..1000 (default 10)", () => {
+  test("count clamps to 1..1000 (default 10); NaN falls back to 10 (L-1)", () => {
     const n = (count?: number) =>
       buildObserve(svc(JAR), { op: "trace", className: "C", method: "m", count }, "1");
     expect(n(5000)).toContain("-n 1000 ");
     expect(n(0)).toContain("-n 1 ");
     expect(n(-3)).toContain("-n 1 ");
     expect(n(undefined)).toContain("-n 10 ");
+    expect(n(Number.NaN)).toContain("-n 10 ");
   });
 
   test("rejects an op that is not read-only", () => {
@@ -122,6 +123,44 @@ describe("observe dispatch (LOCAL_SHELL: pid resolve + command construction)", (
         "watch com.x.OrderService price '\\''{params,returnObj,throwExp}'\\'' -n 5 ; stop",
       );
       expect(cmd?.kind === "command" && cmd.command).toContain("4242 --batch-mode");
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+    }
+  });
+
+  test("ignores noisy locate output, resolves the pure-numeric PID (M-3)", async () => {
+    const env: EnvDescriptor = {
+      id: "e",
+      form: "proprietary",
+      bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
+      services: [
+        {
+          name: "svc",
+          runtime: "jvm",
+          locate: { pid: "echo 'warn 2026'; echo 4242" }, // noise line + real pid line
+          diag: { arthasJar: JAR },
+        },
+      ],
+    };
+    const registry = new Registry(":memory:");
+    registry.upsertEnv(env);
+    const bus = new EventBus();
+    const events: WatchEvent[] = [];
+    bus.subscribe((e) => events.push(e));
+    const pool = new SessionPool(registry, localFactory, {}, bus);
+    try {
+      await dispatch(
+        { registry, pool, bus },
+        {
+          id: 1,
+          method: "observe",
+          params: { envId: "e", service: "svc", op: "trace", class: "C", method: "m" },
+        },
+      );
+      const cmd = events.find((e) => e.kind === "command" && e.method === "observe");
+      expect(cmd?.kind === "command" && cmd.command).toContain("4242 --batch-mode");
+      expect(cmd?.kind === "command" && cmd.command).not.toContain("2026 --batch-mode");
     } finally {
       await pool.releaseAll();
       registry.close();

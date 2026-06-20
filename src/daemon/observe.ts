@@ -33,7 +33,8 @@ const METHOD_RE = /^[A-Za-z0-9_$<>*]+$/;
 const WATCH_EXPR = "{params,returnObj,throwExp}";
 
 function clampCount(n: number | undefined): number {
-  return Math.max(1, Math.min(1000, Math.trunc(n ?? 10)));
+  const t = Math.trunc(n ?? 10);
+  return Number.isFinite(t) ? Math.max(1, Math.min(1000, t)) : 10;
 }
 
 /** Build a read-only Arthas batch command observing a method. pid must be numeric. */

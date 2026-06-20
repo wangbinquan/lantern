@@ -28,7 +28,7 @@ function assertReadOnlyFragment(fragment: string, what: string): void {
 }
 
 function clampInt(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, Math.trunc(v)));
+  return Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.trunc(v))) : lo;
 }
 
 export interface LogsFlags {

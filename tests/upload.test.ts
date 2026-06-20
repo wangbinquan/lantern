@@ -44,6 +44,16 @@ describe("planUpload (RFC-0003 slice 1)", () => {
       planUpload({ base64: "AA", remotePath: "/x", tmpPath: "/t", chunkSize: 0 }),
     ).toThrow();
   });
+
+  test("a NaN chunk size falls back to the default (L-1)", () => {
+    const plan = planUpload({
+      base64: "AAAAAAAA",
+      remotePath: "/x",
+      tmpPath: "/t",
+      chunkSize: Number.NaN,
+    });
+    expect(plan.chunkCount).toBe(1); // 16384 default → one chunk, not a broken plan
+  });
 });
 
 describe("parseChecksum", () => {

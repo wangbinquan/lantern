@@ -59,7 +59,7 @@ export const v = {
 function makePipedAsker(): { ask: Asker; close: () => void } {
   let lines: string[] | null = null;
   let idx = 0;
-  const asker: Asker = async (question) => {
+  const asker: Asker = async (question, opts) => {
     process.stderr.write(question);
     if (lines === null) {
       const text = await Bun.stdin.text();
@@ -67,7 +67,8 @@ function makePipedAsker(): { ask: Asker; close: () => void } {
       if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop(); // trailing newline
     }
     const line = idx < lines.length ? lines[idx++]! : "";
-    process.stderr.write(`${line}\n`);
+    // NEVER echo a secret answer — even piped input may be captured/logged (C-1).
+    process.stderr.write(opts.secret ? "***\n" : `${line}\n`);
     return line;
   };
   return { ask: asker, close: () => {} };

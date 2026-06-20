@@ -51,7 +51,7 @@ export interface UploadPlan {
 
 /** Build the ordered remote command sequence to upload + decode + checksum. */
 export function planUpload(opts: PlanUploadOpts): UploadPlan {
-  const chunkSize = opts.chunkSize ?? 16384;
+  const chunkSize = Number.isFinite(opts.chunkSize) ? Math.trunc(opts.chunkSize as number) : 16384;
   if (chunkSize <= 0) throw new Error("chunkSize must be positive");
   const tmp = shellQuote(opts.tmpPath);
   const out = shellQuote(opts.remotePath);
