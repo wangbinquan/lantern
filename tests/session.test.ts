@@ -64,7 +64,9 @@ function mgr(
   );
 }
 
-describe("SessionManager", () => {
+// drives a real multi-hop/su chain over spawned `bash` + fixtures — skipped on
+// native Windows (no POSIX bash / +x fixtures); the orchestration is platform-agnostic JS.
+describe.skipIf(process.platform === "win32")("SessionManager", () => {
   test("releases the transport when establish() fails mid-setup (no leak, Codex H2)", async () => {
     class FakeTransport {
       closed = 0;

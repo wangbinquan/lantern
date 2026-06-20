@@ -6,6 +6,7 @@ import { Registry } from "../src/registry";
 import type { EnvDescriptor } from "../src/types";
 
 const localFactory = () => () => spawnPty(["bash", "--norc", "--noprofile"]);
+const IS_WIN = process.platform === "win32"; // tests that actually connect spawn bash
 
 function setup(): { deps: McpDeps; registry: Registry; pool: SessionPool } {
   const registry = new Registry(":memory:");
@@ -20,7 +21,7 @@ function setup(): { deps: McpDeps; registry: Registry; pool: SessionPool } {
 }
 
 describe("MCP tools (RFC-0005)", () => {
-  test("exec runs a command on the env session", async () => {
+  test.skipIf(IS_WIN)("exec runs a command on the env session", async () => {
     const { deps, pool, registry } = setup();
     try {
       const r = await execTool(deps, { env: "e", command: "echo mcp-works" });
@@ -32,16 +33,19 @@ describe("MCP tools (RFC-0005)", () => {
     }
   });
 
-  test("exec returns the remote exit code (non-zero is a normal result)", async () => {
-    const { deps, pool, registry } = setup();
-    try {
-      const r = await execTool(deps, { env: "e", command: "false" }); // exit 1, doesn't kill the shell
-      expect(r.exitCode).toBe(1);
-    } finally {
-      await pool.releaseAll();
-      registry.close();
-    }
-  });
+  test.skipIf(IS_WIN)(
+    "exec returns the remote exit code (non-zero is a normal result)",
+    async () => {
+      const { deps, pool, registry } = setup();
+      try {
+        const r = await execTool(deps, { env: "e", command: "false" }); // exit 1, doesn't kill the shell
+        expect(r.exitCode).toBe(1);
+      } finally {
+        await pool.releaseAll();
+        registry.close();
+      }
+    },
+  );
 
   test("exec refuses a catastrophic command", async () => {
     const { deps, pool, registry } = setup();
@@ -98,7 +102,7 @@ describe("MCP tools (RFC-0005)", () => {
     }
   });
 
-  test("exec emits a spectator log entry (command + exit + stdout)", async () => {
+  test.skipIf(IS_WIN)("exec emits a spectator log entry (command + exit + stdout)", async () => {
     const { deps, pool, registry } = setup();
     const seen: ExecLogEntry[] = [];
     deps.onExec = (e) => seen.push(e);

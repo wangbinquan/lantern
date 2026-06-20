@@ -158,7 +158,9 @@ async function runCmd(t: PtyTransport, exp: Expecter, cmd: string, timeoutMs = 5
   return { stdout: stripAnsi(c.stdout), exitCode: c.exitCode };
 }
 
-describe("PTY protocol against real bash", () => {
+// spawns `bash` — skipped on native Windows (no POSIX bash); the marker/expect
+// logic above is pure and runs everywhere.
+describe.skipIf(process.platform === "win32")("PTY protocol against real bash", () => {
   test("captures stdout + zero exit", async () => {
     const { t, exp } = shell();
     try {

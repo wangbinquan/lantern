@@ -1,0 +1,4 @@
+[test]
+# Force the sqlite secret backend in tests so CI never touches a real OS vault
+# (keychain / DPAPI / secret-service) on any platform.
+preload = ["./tests/setup.ts"]

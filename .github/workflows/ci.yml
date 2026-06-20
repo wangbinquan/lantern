@@ -69,16 +69,14 @@ jobs:
           "$tmp/gitleaks" detect --source . --no-banner --redact --verbose
 
   check:
-    # TS lint/typecheck/test for lanternd + lantern CLI. Every real step is
-    # gated on a package.json existing, so until the TypeScript code lands this
-    # job is a green checkout-only no-op; once it lands it auto-activates and
-    # mirrors agent-workflow's `check` (bun setup -> frozen install ->
-    # format:check -> lint -> typecheck -> test) across ubuntu + macOS.
-    name: Lint + Typecheck + Test (TS — activates when code lands)
+    # bun setup -> frozen install -> format:check -> lint -> typecheck -> test,
+    # across Linux + macOS + Windows. The bash-fixture tests (real PTY / multi-hop
+    # su orchestration) skip on native Windows; everything platform-independent runs.
+    name: Lint + Typecheck + Test
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
