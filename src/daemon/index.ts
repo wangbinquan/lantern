@@ -25,8 +25,13 @@ export {
   backupPath,
   uploadTmpPath,
   doPut,
+  doRestart,
+  doSwap,
+  previewSwap,
   type SwapRun,
   type PutResult,
+  type SwapResult,
+  type SwapPreview,
 } from "./swap";
 export {
   EventBus,

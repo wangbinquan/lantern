@@ -7,10 +7,12 @@ import {
   type Artifact,
   dispatch,
   type DispatchDeps,
+  previewSwap,
   SessionPool,
   type SwapRun,
   uploadArtifact,
 } from "../src/daemon";
+import type { ServiceDescriptor, SwapRecipe } from "../src/types";
 import { spawnPty } from "../src/pty";
 import { Registry } from "../src/registry";
 import type { EnvDescriptor } from "../src/types";
@@ -131,6 +133,153 @@ describe("put round-trip through the session (LOCAL_SHELL integration)", () => {
       expect(payload.backedUp).toBe(true);
       expect(readFileSync(remotePath)).toEqual(newContent);
       expect(readFileSync(`${remotePath}.lantern.bak`)).toEqual(Buffer.from("OLD-CONTENT"));
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("previewSwap (RFC-0003 dry-run)", () => {
+  const svc = (swap: SwapRecipe): ServiceDescriptor => ({ name: "svc", runtime: "jvm", swap });
+  const art = artifactOf(Buffer.from("y".repeat(5000)));
+
+  test("computes the plan without running anything", () => {
+    const p = previewSwap(
+      svc({
+        mode: "manual",
+        remotePath: "/app/x.jar",
+        restartCmd: "systemctl restart x",
+        healthCmd: "true",
+      }),
+      art,
+    );
+    expect(p).toMatchObject({
+      remotePath: "/app/x.jar",
+      backupPath: "/app/x.jar.lantern.bak",
+      restartCmd: "systemctl restart x",
+      healthCmd: "true",
+      rollback: true,
+      sha256: art.sha256,
+      artifactBytes: 5000,
+    });
+    expect(p.chunkCount).toBeGreaterThan(0);
+  });
+
+  test("rejects a non-read-only healthCmd", () => {
+    expect(() =>
+      previewSwap(
+        svc({ mode: "manual", remotePath: "/x", restartCmd: "r", healthCmd: "rm -rf /tmp/x" }),
+        art,
+      ),
+    ).toThrow(/read-only/);
+  });
+
+  test("requires remotePath + restartCmd", () => {
+    expect(() => previewSwap(svc({ mode: "manual", restartCmd: "r" }), art)).toThrow(/remotePath/);
+    expect(() => previewSwap(svc({ mode: "manual", remotePath: "/x" }), art)).toThrow(/restartCmd/);
+  });
+});
+
+describe("swap + restart orchestration (LOCAL_SHELL integration)", () => {
+  function envSwap(swap: SwapRecipe): EnvDescriptor {
+    return {
+      id: "e",
+      form: "proprietary",
+      bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
+      services: [{ name: "svc", runtime: "jvm", swap }],
+    };
+  }
+
+  test("healthy swap: uploads, restarts, passes health → swapped", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lantern-swapok-"));
+    const artifactPath = join(dir, "art.bin");
+    const remotePath = join(dir, "deployed.bin");
+    const content = Buffer.from("HEALTHY-PAYLOAD-123");
+    writeFileSync(artifactPath, content);
+    const registry = new Registry(":memory:");
+    registry.upsertEnv(
+      envSwap({ mode: "manual", remotePath, restartCmd: "echo restarted", healthCmd: "true" }),
+    );
+    const pool = new SessionPool(registry, localFactory);
+    try {
+      const r = await dispatch(
+        { registry, pool },
+        {
+          id: 1,
+          method: "swap",
+          params: { envId: "e", service: "svc", file: artifactPath, chunkSize: 256 },
+        },
+      );
+      expect(r.ok).toBe(true);
+      const res = r.ok
+        ? (r.result as { swapped: boolean; rolledBack: boolean; healthExit: number })
+        : null;
+      expect(res?.swapped).toBe(true);
+      expect(res?.rolledBack).toBe(false);
+      expect(res?.healthExit).toBe(0);
+      expect(readFileSync(remotePath)).toEqual(content);
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("unhealthy swap: rolls back to the backup + restarts", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lantern-swaprb-"));
+    const artifactPath = join(dir, "art.bin");
+    const remotePath = join(dir, "deployed.bin");
+    writeFileSync(remotePath, Buffer.from("OLD-GOOD"));
+    writeFileSync(artifactPath, Buffer.from("NEW-BROKEN"));
+    const registry = new Registry(":memory:");
+    registry.upsertEnv(
+      // health `test 1 = 2` is read-only and exits 1 → unhealthy
+      envSwap({ mode: "manual", remotePath, restartCmd: "echo r", healthCmd: "test 1 = 2" }),
+    );
+    const pool = new SessionPool(registry, localFactory);
+    try {
+      const r = await dispatch(
+        { registry, pool },
+        {
+          id: 1,
+          method: "swap",
+          params: { envId: "e", service: "svc", file: artifactPath },
+        },
+      );
+      expect(r.ok).toBe(true);
+      const res = r.ok ? (r.result as { swapped: boolean; rolledBack: boolean }) : null;
+      expect(res?.swapped).toBe(false);
+      expect(res?.rolledBack).toBe(true);
+      expect(readFileSync(remotePath)).toEqual(Buffer.from("OLD-GOOD")); // restored
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("restart runs the service's restartCmd", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lantern-restart-"));
+    const registry = new Registry(":memory:");
+    registry.upsertEnv(
+      envSwap({ mode: "manual", remotePath: join(dir, "x"), restartCmd: "echo restarted-ok" }),
+    );
+    const pool = new SessionPool(registry, localFactory);
+    try {
+      const r = await dispatch(
+        { registry, pool },
+        {
+          id: 1,
+          method: "restart",
+          params: { envId: "e", service: "svc" },
+        },
+      );
+      expect(r.ok).toBe(true);
+      const res = r.ok ? (r.result as { exitCode: number; stdout: string }) : null;
+      expect(res?.exitCode).toBe(0);
+      expect(res?.stdout).toContain("restarted-ok");
     } finally {
       await pool.releaseAll();
       registry.close();

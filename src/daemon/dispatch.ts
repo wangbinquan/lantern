@@ -10,7 +10,7 @@ import type { EnvDescriptor, ServiceDescriptor } from "../types";
 import type { AuditSink } from "./audit";
 import { buildLogs, buildSnapshot, buildState, locatePidCommand, type LogsFlags } from "./commands";
 import type { SessionPool } from "./pool";
-import { doPut, type SwapRun } from "./swap";
+import { doPut, doRestart, doSwap, previewSwap, type SwapRun } from "./swap";
 import { readArtifact } from "./upload";
 import type { RpcRequest, RpcResponse } from "./protocol";
 import type { EventBus } from "./watch";
@@ -247,6 +247,46 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
         exitCode: 0,
       });
       return { service: svc.name, ...result, bytes: artifact.bytes };
+    }
+
+    case "restart": {
+      const env = resolveEnv(deps, p);
+      const svc = resolveService(env, p);
+      const cmd = svc.swap?.restartCmd;
+      if (!cmd) throw new Error(`service "${svc.name}" has no swap.restartCmd`);
+      pubCommand(deps, env.id, "restart", cmd);
+      const run: SwapRun = (c) => deps.pool.run(env.id, c, numOpt(p.timeoutMs));
+      const r = await doRestart(run, svc);
+      record(deps, env.id, "restart", cmd, r);
+      pubExit(deps, env.id, "restart", r);
+      return { service: svc.name, command: cmd, exitCode: r.exitCode, stdout: r.stdout };
+    }
+
+    case "swap": {
+      const env = resolveEnv(deps, p);
+      const svc = resolveService(env, p);
+      const file = strOpt(p.file);
+      if (!file) throw new Error("missing --file");
+      const artifact = await readArtifact(file);
+      const rollback = p.rollback === false ? false : undefined; // --no-rollback
+      const chunkSize = numOpt(p.chunkSize);
+      if (p.dryRun === true) {
+        return { dryRun: true, ...previewSwap(svc, artifact, { rollback, chunkSize }) };
+      }
+      const run: SwapRun = (c) => deps.pool.run(env.id, c, numOpt(p.timeoutMs));
+      const result = await doSwap(run, svc, artifact, {
+        rollback,
+        chunkSize,
+        onStep: (label, command) => pubCommand(deps, env.id, "swap", `[${label}] ${command}`),
+      });
+      record(
+        deps,
+        env.id,
+        "swap",
+        `swap ${file} → ${result.remotePath} (swapped=${result.swapped} rolledBack=${result.rolledBack})`,
+        { stdout: "", exitCode: result.swapped ? 0 : 1 },
+      );
+      return { ...result };
     }
 
     default:

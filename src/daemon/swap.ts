@@ -4,6 +4,7 @@
  * swap (slice 3) chains put → restart → health → rollback. All steps run through
  * a `SwapRun` (the pool's per-env runner), injectable for tests.
  */
+import { classifyCommand } from "../classify";
 import type { RunResult } from "../ssh";
 import type { ServiceDescriptor } from "../types";
 import { shellQuote } from "../util/shell";
@@ -80,4 +81,128 @@ export async function doPut(
     chunkSize,
   });
   return { remotePath, sha256, backedUp };
+}
+
+/** Run the service's swap.restartCmd. */
+export async function doRestart(run: SwapRun, service: ServiceDescriptor): Promise<RunResult> {
+  const cmd = service.swap?.restartCmd;
+  if (!cmd) throw new Error(`service "${service.name}" has no swap.restartCmd`);
+  return run(cmd);
+}
+
+/** Validate the swap recipe; healthCmd (if any) must be read-only. */
+function requireSwap(service: ServiceDescriptor): { remotePath: string; restartCmd: string } {
+  const swap = service.swap;
+  if (!swap?.remotePath) throw new Error(`service "${service.name}" has no swap.remotePath`);
+  if (!swap.restartCmd) throw new Error(`service "${service.name}" has no swap.restartCmd`);
+  if (swap.healthCmd) {
+    const v = classifyCommand(swap.healthCmd);
+    if (v.verdict !== "read") {
+      throw new Error(`swap.healthCmd must be read-only (${v.verdict}: ${v.reason})`);
+    }
+  }
+  return { remotePath: swap.remotePath, restartCmd: swap.restartCmd };
+}
+
+export interface SwapPreview {
+  service: string;
+  artifactBytes: number;
+  sha256: string;
+  remotePath: string;
+  backupPath: string;
+  restartCmd: string;
+  healthCmd?: string;
+  rollback: boolean;
+  chunkCount: number;
+}
+
+/** Compute what a swap WOULD do, without touching the env (--dry-run, RFC-0003). */
+export function previewSwap(
+  service: ServiceDescriptor,
+  artifact: Artifact,
+  opts: { rollback?: boolean; chunkSize?: number } = {},
+): SwapPreview {
+  const { remotePath, restartCmd } = requireSwap(service);
+  const plan = planUpload({
+    base64: artifact.base64,
+    remotePath,
+    tmpPath: uploadTmpPath(service),
+    chunkSize: opts.chunkSize,
+  });
+  return {
+    service: service.name,
+    artifactBytes: artifact.bytes,
+    sha256: artifact.sha256,
+    remotePath,
+    backupPath: backupPath(remotePath),
+    restartCmd,
+    healthCmd: service.swap?.healthCmd,
+    rollback: opts.rollback ?? service.swap?.rollback ?? true,
+    chunkCount: plan.chunkCount,
+  };
+}
+
+export interface SwapResult {
+  service: string;
+  remotePath: string;
+  sha256: string;
+  backedUp: boolean;
+  restarted: boolean;
+  /** Exit code of healthCmd, or null if none configured. */
+  healthExit: number | null;
+  /** True if healthy (or no healthCmd). */
+  swapped: boolean;
+  rolledBack: boolean;
+}
+
+/** The full loop: backup → upload → restart → health → (rollback on failure). */
+export async function doSwap(
+  run: SwapRun,
+  service: ServiceDescriptor,
+  artifact: Artifact,
+  opts: {
+    rollback?: boolean;
+    chunkSize?: number;
+    onStep?: (label: string, command: string) => void;
+  } = {},
+): Promise<SwapResult> {
+  const { remotePath, restartCmd } = requireSwap(service);
+  const rollback = opts.rollback ?? service.swap?.rollback ?? true;
+  const step = opts.onStep ?? (() => {});
+
+  step("backup+upload", `put → ${remotePath}`);
+  const put = await doPut(run, service, artifact, opts.chunkSize);
+
+  step("restart", restartCmd);
+  await doRestart(run, service);
+
+  let healthExit: number | null = null;
+  let healthy = true;
+  if (service.swap?.healthCmd) {
+    step("health", service.swap.healthCmd);
+    const h = await run(service.swap.healthCmd);
+    healthExit = h.exitCode;
+    healthy = h.exitCode === 0;
+  }
+
+  let rolledBack = false;
+  if (!healthy && rollback && put.backedUp) {
+    const rp = shellQuote(remotePath);
+    const bak = shellQuote(backupPath(remotePath));
+    step("rollback", `cp ${bak} ${rp}`);
+    await run(`cp ${bak} ${rp}`);
+    await doRestart(run, service);
+    rolledBack = true;
+  }
+
+  return {
+    service: service.name,
+    remotePath: put.remotePath,
+    sha256: put.sha256,
+    backedUp: put.backedUp,
+    restarted: true,
+    healthExit,
+    swapped: healthy,
+    rolledBack,
+  };
 }
