@@ -8,7 +8,7 @@ import type { Registry } from "../registry";
 import type { RunResult } from "../ssh";
 import type { EnvDescriptor, ServiceDescriptor } from "../types";
 import type { AuditSink } from "./audit";
-import { buildLogs, buildSnapshot, buildState, type LogsFlags } from "./commands";
+import { buildLogs, buildSnapshot, buildState, locatePidCommand, type LogsFlags } from "./commands";
 import type { SessionPool } from "./pool";
 import type { RpcRequest, RpcResponse } from "./protocol";
 
@@ -132,8 +132,14 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
     case "snapshot": {
       const env = resolveEnv(deps, p);
       const svc = resolveService(env, p);
-      const command = buildSnapshot(svc);
-      const r = await deps.pool.run(env.id, command, numOpt(p.timeoutMs));
+      const timeoutMs = numOpt(p.timeoutMs);
+      // Step 1: resolve the PID via a classifier-validated read command.
+      const pidOut = await deps.pool.run(env.id, locatePidCommand(svc), timeoutMs);
+      const pid = /\d+/.exec(pidOut.stdout)?.[0];
+      if (!pid) throw new Error(`snapshot: could not resolve a PID for service "${svc.name}"`);
+      // Step 2: passive diagnostic against the validated numeric PID (no $()).
+      const command = buildSnapshot(svc, pid);
+      const r = await deps.pool.run(env.id, command, timeoutMs);
       record(deps, env.id, "snapshot", command, r);
       return { stdout: r.stdout, exitCode: r.exitCode, command };
     }

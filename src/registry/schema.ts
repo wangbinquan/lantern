@@ -6,16 +6,21 @@
  */
 import { z } from "zod";
 
+// A safe username / host (no shell metacharacters) — defense-in-depth alongside
+// shell-quoting in SessionManager (Codex H2).
+const USERNAME = z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/, "invalid username");
+const HOSTNAME = z.string().regex(/^[A-Za-z0-9_.:-]+$/, "invalid host");
+
 export const SuStepSchema = z.object({
   type: z.literal("su"),
-  user: z.string().min(1),
+  user: USERNAME,
   secretRef: z.string().min(1),
   promptRe: z.string().optional(),
 });
 
 export const HopSchema = z.object({
-  to: z.string().min(1),
-  viaUser: z.string().min(1),
+  to: HOSTNAME,
+  viaUser: USERNAME,
   viaSecretRef: z.string().min(1),
   sshSecretRef: z.string().min(1),
   escalate: z.array(SuStepSchema).optional(),
@@ -29,9 +34,9 @@ export const BastionAuthSchema = z.object({
 });
 
 export const BastionSchema = z.object({
-  host: z.string().min(1),
+  host: HOSTNAME,
   port: z.number().int().positive().optional(),
-  loginUser: z.string().min(1),
+  loginUser: USERNAME,
   auth: BastionAuthSchema,
   promptRe: z.string().optional(),
 });

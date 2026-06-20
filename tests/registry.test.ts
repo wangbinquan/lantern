@@ -100,6 +100,16 @@ describe("Registry (in-memory)", () => {
     expect(() =>
       r.upsertEnv({ ...SAMPLE, form: "vmware" as unknown as EnvDescriptor["form"] }),
     ).toThrow();
+    // shell-metacharacter username / host are rejected (Codex H2 defense-in-depth)
+    expect(() =>
+      r.upsertEnv({
+        ...SAMPLE,
+        bastion: { ...SAMPLE.bastion, loginUser: "low; rm -rf /" },
+      }),
+    ).toThrow();
+    expect(() =>
+      r.upsertEnv({ ...SAMPLE, bastion: { ...SAMPLE.bastion, host: "h$(id)" } }),
+    ).toThrow();
     r.close();
   });
 

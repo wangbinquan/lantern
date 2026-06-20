@@ -2,6 +2,7 @@ export {
   buildLogs,
   buildState,
   buildSnapshot,
+  locatePidCommand,
   shellQuote,
   CommandError,
   type LogsFlags,

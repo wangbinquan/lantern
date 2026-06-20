@@ -1,11 +1,16 @@
 /**
- * Read-only-by-construction command builders (design.md §5/§8). The auto-allowed
- * read subcommands (logs/state) never take free-form remote shell — lanternd
- * builds the remote command from the service descriptor + structured flags here.
- * Server-side filtering (grep/head/tail) runs on the REMOTE shell, so the bash
- * string opencode sees stays a clean `lantern logs …` with no shell metachars.
+ * Read-only-by-construction command builders (design.md §5/§8). lanternd builds
+ * the remote command from the service descriptor + structured flags. Data fields
+ * (namespace, selector, grep, file path) are shell-quoted; descriptor COMMAND
+ * fragments (logs.k8s template, locate.pid) are classifier-validated as
+ * read-only (fail-closed), so a hostile/corrupt descriptor cannot turn an
+ * auto-approved read into arbitrary remote execution (Codex C3).
  */
+import { classifyCommand } from "../classify";
+import { shellQuote } from "../util/shell";
 import type { EnvForm, ServiceDescriptor } from "../types";
+
+export { shellQuote };
 
 export class CommandError extends Error {
   constructor(message: string) {
@@ -14,9 +19,12 @@ export class CommandError extends Error {
   }
 }
 
-/** POSIX single-quote a value for safe interpolation into a remote command. */
-export function shellQuote(s: string): string {
-  return `'${s.replaceAll("'", `'\\''`)}'`;
+/** Throw unless a descriptor-supplied command fragment classifies as read-only. */
+function assertReadOnlyFragment(fragment: string, what: string): void {
+  const r = classifyCommand(fragment);
+  if (r.verdict !== "read") {
+    throw new CommandError(`${what} is not read-only (${r.verdict}: ${r.reason})`);
+  }
 }
 
 function clampInt(v: number, lo: number, hi: number): number {
@@ -42,6 +50,8 @@ export function buildLogs(service: ServiceDescriptor, form: EnvForm, f: LogsFlag
       base = service.logs.k8s
         .replaceAll("{{tail}}", String(tail))
         .replaceAll("{{since}}", f.since ?? "1h");
+      // operator-supplied command template — must be read-only.
+      assertReadOnlyFragment(base, `service "${service.name}" logs.k8s template`);
     } else {
       const ns = service.locate?.k8s?.namespace;
       const sel = service.locate?.k8s?.selector;
@@ -55,6 +65,7 @@ export function buildLogs(service: ServiceDescriptor, form: EnvForm, f: LogsFlag
         (f.since ? ` --since=${shellQuote(f.since)}` : "") +
         (f.container ? ` -c ${shellQuote(f.container)}` : "");
     }
+    // grep pattern is DATA (shell-quoted), not a command — safe to append.
     cmd = f.grep ? `${base} | grep -- ${shellQuote(f.grep)}` : base;
   } else {
     const path = service.logs?.file;
@@ -77,26 +88,34 @@ export function buildState(service: ServiceDescriptor, form: EnvForm): string {
     }
     return `kubectl -n ${shellQuote(ns)} get pods -l ${shellQuote(sel)} -o wide`;
   }
-  if (service.locate?.pid) return `${service.locate.pid} | head -n 50`;
+  if (service.locate?.pid) {
+    assertReadOnlyFragment(service.locate.pid, `service "${service.name}" locate.pid`);
+    return `${service.locate.pid} | head -n 50`;
+  }
   return `ps -ef | grep -- ${shellQuote(service.name)} | grep -v grep`;
 }
 
-/**
- * Passive one-shot diagnostic snapshot (design.md §7 "被动快照", read-only): a
- * thread dump / py-spy dump / proc status of the live process. The pid is
- * resolved on the REMOTE via locate.pid (a `$(...)` here is fine — it runs on
- * the env shell, not in opencode's bash gate).
- */
-export function buildSnapshot(service: ServiceDescriptor): string {
+/** The (classifier-validated read-only) command that resolves a service's PID. */
+export function locatePidCommand(service: ServiceDescriptor): string {
   const pidCmd = service.locate?.pid;
-  if (!pidCmd) throw new CommandError(`service "${service.name}": snapshot needs locate.pid`);
-  const pid = `$(${pidCmd} | head -n 1)`;
+  if (!pidCmd) throw new CommandError(`service "${service.name}": needs locate.pid`);
+  assertReadOnlyFragment(pidCmd, `service "${service.name}" locate.pid`);
+  return pidCmd;
+}
+
+/**
+ * Passive one-shot diagnostic snapshot (design.md §7, read-only) for an
+ * ALREADY-RESOLVED numeric pid (resolved by dispatch in a separate step so no
+ * `$(...)` substitution is embedded — Codex C3). pid must be numeric.
+ */
+export function buildSnapshot(service: ServiceDescriptor, pid: string): string {
+  if (!/^\d+$/.test(pid)) throw new CommandError(`snapshot: invalid pid "${pid}"`);
   switch (service.runtime) {
     case "jvm":
       return `jstack ${pid}`;
     case "python":
       return `py-spy dump --pid ${pid}`;
     case "go":
-      return `cat /proc/${pid}/status`; // passive; full goroutine dump needs observe/dlv (Phase 2)
+      return `cat /proc/${pid}/status`;
   }
 }

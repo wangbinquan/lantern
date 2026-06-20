@@ -13,6 +13,7 @@ import { Expecter } from "../pty/expect";
 import { markerRegex, newMarkerId, parseCompletion, stripAnsi, wrapCommand } from "../pty/marker";
 import type { PtyTransport } from "../pty/transport";
 import type { EnvDescriptor, SecretResolver, SuStep, Hop } from "../types";
+import { shellQuote } from "../util/shell";
 
 export class SessionError extends Error {
   constructor(message: string) {
@@ -164,7 +165,7 @@ export class SessionManager {
 
   private async suStep(step: SuStep): Promise<void> {
     this.emit("step", `escalate: su - ${step.user}`);
-    this.writeRaw(`su - ${step.user}\n`);
+    this.writeRaw(`su - ${shellQuote(step.user)}\n`);
     const re = step.promptRe ? new RegExp(step.promptRe) : this.passwordPrompt;
     await this.exp.expect(re, this.syncTimeoutMs);
     await this.sendSecret(step.secretRef);
@@ -184,7 +185,7 @@ export class SessionManager {
     });
     // 2) ssh into the internal node
     this.emit("step", `hop: ssh ${hop.to}`);
-    this.writeRaw(`ssh ${hop.to}\n`);
+    this.writeRaw(`ssh ${shellQuote(hop.to)}\n`);
     const re = hop.promptRe ? new RegExp(hop.promptRe) : this.passwordPrompt;
     await this.exp.expect(re, this.syncTimeoutMs);
     await this.sendSecret(hop.sshSecretRef);
