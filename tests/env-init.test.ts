@@ -204,6 +204,20 @@ describe("incremental role / node (lantern env role|node add)", () => {
     expect(secrets).toEqual({ "prod-a/node-app1-via0": "v", "prod-a/node-app1-ssh": "s" });
   });
 
+  test("buildNodePlan keeps a templated address + toPattern (RFC-0008)", () => {
+    const { node } = buildNodePlan("prod-a", {
+      name: "worker",
+      to: "${target}",
+      sshPassword: "s",
+      toPattern: "10\\.0\\.0\\..*",
+    });
+    expect(node).toEqual({
+      to: "${target}",
+      sshSecretRef: "prod-a/node-worker-ssh",
+      toPattern: "10\\.0\\.0\\..*",
+    });
+  });
+
   test("promptRole collects at + su; bastion → at undefined", async () => {
     expect(
       await promptRole(scriptedAsker(["app1", "svcuser", "svcpw", ""]), "restart", ["app1"]),

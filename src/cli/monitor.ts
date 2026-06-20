@@ -18,8 +18,9 @@ const RESET = "\x1b[0m";
 /** Format one log entry as a spectator line (pure — unit-tested). */
 export function formatExecLine(e: ExecLogEntry): string {
   const time = new Date(e.ts).toTimeString().slice(0, 8);
-  const who = e.role
-    ? `${CYAN}${e.env}${RESET} ${DIM}(${e.role})${RESET}`
+  const ident = e.role && e.target ? `${e.role} → ${e.target}` : e.role;
+  const who = ident
+    ? `${CYAN}${e.env}${RESET} ${DIM}(${ident})${RESET}`
     : `${CYAN}${e.env}${RESET}`;
   const head = `${DIM}${time}${RESET} ${who}`;
   if (e.refused) {

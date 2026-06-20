@@ -28,12 +28,13 @@ export interface BastionAnswer {
   insecureHostKey?: boolean;
 }
 
-/** A reachable internal node: su chain on the bastion + ssh in. */
+/** A reachable internal node: su chain on the bastion + ssh in. `to` may be `${target}`. */
 export interface NodeAnswer {
   name: string;
   via?: SuAnswer[];
   to: string;
   sshPassword: string;
+  toPattern?: string;
 }
 
 /** A per-operation identity: where to land (`at`) + su chain to the role user. */
@@ -92,6 +93,7 @@ export function buildRole(a: RoleAnswer, ref: Ref): Role {
 export function buildNode(a: NodeAnswer, ref: Ref): NodeReach {
   const node: NodeReach = { to: a.to, sshSecretRef: ref(`node-${a.name}-ssh`, a.sshPassword) };
   if (a.via && a.via.length > 0) node.via = suChainWith(a.via, `node-${a.name}-via`, ref);
+  if (a.toPattern) node.toPattern = a.toPattern;
   return node;
 }
 

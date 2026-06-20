@@ -57,12 +57,19 @@ async function collectSuChain(asker: Asker, firstQuestion: string): Promise<SuAn
 /** Prompt for one node's reach (su chain on the bastion → ssh in). Name is given. */
 export async function promptNode(asker: Asker, name: string): Promise<NodeAnswer> {
   const via = await collectSuChain(asker, "  到该节点前,在堡垒上 su 到谁?");
-  const to = await ask(asker, "  节点地址", { validate: v.host });
+  const to = await ask(asker, "  节点地址 (固定 IP,或 ${target} = 运行时传入)", {
+    validate: (s) => (/^[A-Za-z0-9_.:${}-]+$/.test(s) ? null : "invalid host / ${target}"),
+  });
   const sshPassword = await ask(asker, "  ssh 该节点的密码", {
     secret: true,
     validate: v.nonEmpty,
   });
-  return { name, via: via.length ? via : undefined, to, sshPassword };
+  const ans: NodeAnswer = { name, via: via.length ? via : undefined, to, sshPassword };
+  if (to.includes("${target}")) {
+    const pat = await ask(asker, "  允许的 target 正则 (可空,如 10\\.0\\.0\\..*)");
+    if (pat) ans.toPattern = pat;
+  }
+  return ans;
 }
 
 /** Prompt for one role (where to land + su chain). Name is given; `at` ∈ bastion|nodeNames. */

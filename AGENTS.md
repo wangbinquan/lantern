@@ -25,11 +25,13 @@ logs, diagnosing, deploying) are **your own skills**, composed from `exec` calls
    command on the environment (RFC-0006), separate from the chat.
 
 ## Rules for the agent
-- **Run commands on the environment via `exec`** (`{env, command, role?, timeoutMs?}`).
+- **Run commands on the environment via `exec`** (`{env, command, role?, target?, timeoutMs?}`).
   Pick the env id + the `role` for your operation from `env_list` (each env lists its
   roles, e.g. `restart` / `filexfer` / `diagnose`). The role decides which machine +
-  user the command runs as; omit it only when the env has exactly one role. Only the
-  server holds credentials, so nothing else can reach the environment.
+  user the command runs as; omit it only when the env has exactly one role. If a role's
+  node is templated (a fleet/k8s worker), pass the discovered IP as `target` (the server
+  validates it against the node's allowlist). Only the server holds credentials, so
+  nothing else can reach the environment.
 - **Read before you write.** Gather evidence (logs, status, stack traces) with
   read-only commands first; keep them bounded (`tail`/`grep`/`--since`), don't dump
   whole logs. Reach for mutations (restart, file changes, redeploy) only once the

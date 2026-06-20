@@ -94,6 +94,19 @@ describe("formatExecLine (RFC-0006 spectator)", () => {
     expect(stripAnsi(formatExecLine(e))).toContain("prod-a (restart) $ systemctl restart svc");
   });
 
+  test("shows role → target for a templated node (RFC-0008)", () => {
+    const e: ExecLogEntry = {
+      ts: 0,
+      env: "prod-a",
+      role: "worker-shell",
+      target: "10.0.0.5",
+      command: "df -h",
+      exitCode: 0,
+      stdoutBytes: 0,
+    };
+    expect(stripAnsi(formatExecLine(e))).toContain("prod-a (worker-shell → 10.0.0.5) $ df -h");
+  });
+
   test("no false truncation marker for multibyte output (Codex L5)", () => {
     const out = "日本語ログ"; // 5 chars, 15 bytes — would falsely mark if compared by char length
     const e: ExecLogEntry = {

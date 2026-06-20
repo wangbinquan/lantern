@@ -59,6 +59,10 @@ server.registerTool(
         .string()
         .optional()
         .describe("identity to run as (from env_list.roles); omit if the env has one role"),
+      target: z
+        .string()
+        .optional()
+        .describe("ssh target for a role whose node is templated (e.g. a discovered worker IP)"),
       timeoutMs: z.number().int().positive().optional().describe("per-command timeout in ms"),
     },
   },

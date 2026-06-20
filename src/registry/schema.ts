@@ -18,11 +18,17 @@ export const SuStepSchema = z.object({
   promptRe: z.string().optional(),
 });
 
+// `to` is a host OR the `${target}` template (RFC-0008), so allow `${}` here too.
+const HOST_OR_TEMPLATE = z
+  .string()
+  .regex(/^[A-Za-z0-9_.:${}-]+$/, "invalid host / target template");
+
 export const NodeReachSchema = z.object({
   via: z.array(SuStepSchema).optional(),
-  to: HOSTNAME,
+  to: HOST_OR_TEMPLATE,
   sshSecretRef: z.string().min(1),
   promptRe: z.string().optional(),
+  toPattern: z.string().optional(),
 });
 
 export const RoleSchema = z.object({

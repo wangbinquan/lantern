@@ -14,6 +14,8 @@ export interface ExecLogEntry {
   env: string;
   /** The role (identity) the command ran as (RFC-0007); absent if refused pre-resolution. */
   role?: string;
+  /** The runtime target the role's node resolved to (RFC-0008), if any. */
+  target?: string;
   command: string;
   exitCode: number | null;
   stdoutBytes: number;
@@ -37,6 +39,8 @@ export interface ExecArgs {
   command: string;
   /** Which identity to run as (RFC-0007). Omit if the env has exactly one role. */
   role?: string;
+  /** Runtime ssh target for a templated node (RFC-0008), e.g. a discovered worker IP. */
+  target?: string;
   timeoutMs?: number;
 }
 
@@ -76,7 +80,7 @@ export async function execTool(deps: McpDeps, args: ExecArgs): Promise<ExecResul
   const role = resolveRole(env, args.role); // explicit, or the sole role, else throws
   let r;
   try {
-    r = await deps.pool.run(args.env, role, args.command, args.timeoutMs);
+    r = await deps.pool.run(args.env, role, args.command, args.timeoutMs, args.target);
   } catch (e) {
     // the command was issued but the session failed (timeout/marker loss) — still
     // mirror it to the spectator log (RFC-0006: executed OR failed, not just success).
@@ -84,6 +88,7 @@ export async function execTool(deps: McpDeps, args: ExecArgs): Promise<ExecResul
       ts: Date.now(),
       env: args.env,
       role,
+      target: args.target,
       command: args.command,
       exitCode: null,
       stdoutBytes: 0,
@@ -95,6 +100,7 @@ export async function execTool(deps: McpDeps, args: ExecArgs): Promise<ExecResul
     ts: Date.now(),
     env: args.env,
     role,
+    target: args.target,
     command: args.command,
     exitCode: r.exitCode,
     stdoutBytes: Buffer.byteLength(r.stdout),
