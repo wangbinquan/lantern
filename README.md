@@ -21,6 +21,8 @@
 
 **按操作选身份:角色(role)**(RFC-0007)。隔离环境每台机上有很多用户,按操作选(重启服务用一个、传文件用另一个,可能在不同节点)。所以描述符是**骨架 + 角色**:`bastion` 登录 + 命名 `nodes`(怎么到每台机)+ `roles`(在哪台、su 成谁)。`exec(env, command, role)` 由 skill 按操作传 `role`,Lantern 把那条链解析出来、在对应提示符注入该角色的 su 密码(keychain)。同角色复用一条常驻会话,换角色切另一条。
 
+**多层节点**:`nodes[].from` 指向父节点,`resolveChain` 先递归到父节点再 ssh 下一跳(带环检测),所以 `堡垒 → gateway → app → …` 任意层都行;向导问"从哪台到达?"。
+
 **动态节点:运行时 target**(RFC-0008)。k8s 等场景 worker 是动态的——只配 master,worker IP 让 skill 跑 `kubectl get node` 自己取。节点可设模板 `to: "${target}"` + `toPattern` 网段白名单;`exec(env, command, role, target)` 时把发现的 IP 当 `target` 传,Lantern 校验(host 字符 + toPattern)后 ssh 进去。配一个 worker 模板,不是逐台。
 
 安全/可见性交给 MCP 客户端:**逐条 `exec` 确认** = opencode 的工具调用权限网关;**实时可见** = opencode TUI 显示每次工具调用 + 结果。Lantern 只保留一条**灾难命令兜底**(拒绝 `rm -rf` / `mkfs` / fork bomb 等)。密码全程在 OS 钥匙串,经 PTV 注入、从每个结果里脱敏。

@@ -28,9 +28,10 @@ export interface BastionAnswer {
   insecureHostKey?: boolean;
 }
 
-/** A reachable internal node: su chain on the bastion + ssh in. `to` may be `${target}`. */
+/** A reachable internal node: su chain + ssh in, from the bastion or another node. */
 export interface NodeAnswer {
   name: string;
+  from?: string;
   via?: SuAnswer[];
   to: string;
   sshPassword: string;
@@ -92,6 +93,7 @@ export function buildRole(a: RoleAnswer, ref: Ref): Role {
 /** Build one node's reach descriptor, registering its via + ssh passwords via `ref`. */
 export function buildNode(a: NodeAnswer, ref: Ref): NodeReach {
   const node: NodeReach = { to: a.to, sshSecretRef: ref(`node-${a.name}-ssh`, a.sshPassword) };
+  if (a.from) node.from = a.from;
   if (a.via && a.via.length > 0) node.via = suChainWith(a.via, `node-${a.name}-via`, ref);
   if (a.toPattern) node.toPattern = a.toPattern;
   return node;

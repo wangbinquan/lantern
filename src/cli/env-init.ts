@@ -54,9 +54,22 @@ async function collectSuChain(asker: Asker, firstQuestion: string): Promise<SuAn
   return chain;
 }
 
-/** Prompt for one node's reach (su chain on the bastion → ssh in). Name is given. */
-export async function promptNode(asker: Asker, name: string): Promise<NodeAnswer> {
-  const via = await collectSuChain(asker, "  到该节点前,在堡垒上 su 到谁?");
+/** Prompt for one node's reach (from bastion or another node → su → ssh in). Name is given. */
+export async function promptNode(
+  asker: Asker,
+  name: string,
+  nodeNames: string[] = [],
+): Promise<NodeAnswer> {
+  // which machine do we ssh FROM? bastion, or an already-defined node (multi-hop).
+  const fromOpts = ["bastion", ...nodeNames];
+  const from =
+    fromOpts.length > 1
+      ? await ask(asker, `  从哪台到达? [${fromOpts.join("/")}]`, {
+          default: "bastion",
+          validate: oneOf(fromOpts),
+        })
+      : "bastion";
+  const via = await collectSuChain(asker, `  在 ${from} 上 su 到谁(为了能 ssh 它)?`);
   const to = await ask(asker, "  节点地址 (固定 IP,或 ${target} = 运行时传入)", {
     validate: (s) => (/^[A-Za-z0-9_.:${}-]+$/.test(s) ? null : "invalid host / ${target}"),
   });
@@ -65,6 +78,7 @@ export async function promptNode(asker: Asker, name: string): Promise<NodeAnswer
     validate: v.nonEmpty,
   });
   const ans: NodeAnswer = { name, via: via.length ? via : undefined, to, sshPassword };
+  if (from !== "bastion") ans.from = from;
   if (to.includes("${target}")) {
     const pat = await ask(asker, "  允许的 target 正则 (可空,如 10\\.0\\.0\\..*)");
     if (pat) ans.toPattern = pat;
@@ -146,7 +160,13 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
   if (await confirm(asker, "要配置内网节点吗?", false)) {
     do {
       const name = await ask(asker, "  节点名 (如 app1)", { validate: v.username });
-      nodes.push(await promptNode(asker, name));
+      nodes.push(
+        await promptNode(
+          asker,
+          name,
+          nodes.map((n) => n.name),
+        ),
+      );
     } while (await confirm(asker, "再配一个节点?", false));
   }
 
@@ -246,7 +266,7 @@ export async function runNodeAddCli(envId: string, name: string): Promise<void> 
     const env = registry.getEnv(envId);
     if (!env) throw new Error(`unknown environment "${envId}"`);
     if (env.nodes?.[name]) throw new Error(`node "${name}" already exists in "${envId}"`);
-    const answer = await promptNode(tty.ask, name);
+    const answer = await promptNode(tty.ask, name, Object.keys(env.nodes ?? {}));
     const { node, secrets } = buildNodePlan(envId, answer);
     env.nodes = { ...env.nodes, [name]: node };
     registry.upsertEnv(env);

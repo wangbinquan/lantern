@@ -233,13 +233,40 @@ describe("incremental role / node (lantern env role|node add)", () => {
     });
   });
 
-  test("promptNode collects via + to + ssh password", async () => {
-    expect(await promptNode(scriptedAsker(["jump", "jp", "", "10.0.0.9", "sp"]), "app1")).toEqual({
+  test("promptNode collects via + to + ssh password (no other nodes → from omitted)", async () => {
+    const a = await promptNode(scriptedAsker(["jump", "jp", "", "10.0.0.9", "sp"]), "app1", []);
+    expect(a).toEqual({
       name: "app1",
       via: [{ user: "jump", password: "jp" }],
       to: "10.0.0.9",
       sshPassword: "sp",
     });
+    expect(a.from).toBeUndefined();
+  });
+
+  test("promptNode asks `from` when other nodes exist (multi-hop)", async () => {
+    const a = await promptNode(
+      scriptedAsker(["gateway", "relay", "rp", "", "10.1.0.5", "sp"]),
+      "app",
+      ["gateway"],
+    );
+    expect(a).toMatchObject({
+      name: "app",
+      from: "gateway",
+      via: [{ user: "relay", password: "rp" }],
+      to: "10.1.0.5",
+      sshPassword: "sp",
+    });
+  });
+
+  test("buildNodePlan keeps `from` (multi-hop)", () => {
+    const { node } = buildNodePlan("e", {
+      name: "app",
+      from: "gateway",
+      to: "10.1.0.5",
+      sshPassword: "s",
+    });
+    expect(node).toMatchObject({ from: "gateway", to: "10.1.0.5", sshSecretRef: "e/node-app-ssh" });
   });
 
   test("adding a role merges into the env and re-validates on upsert", () => {

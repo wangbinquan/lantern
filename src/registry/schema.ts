@@ -24,6 +24,7 @@ const HOST_OR_TEMPLATE = z
   .regex(/^[A-Za-z0-9_.:${}-]+$/, "invalid host / target template");
 
 export const NodeReachSchema = z.object({
+  from: z.string().optional(),
   via: z.array(SuStepSchema).optional(),
   to: HOST_OR_TEMPLATE,
   sshSecretRef: z.string().min(1),
@@ -77,6 +78,12 @@ export const EnvDescriptorSchema = z
         (role) => !role.at || role.at === "bastion" || env.nodes?.[role.at] !== undefined,
       ),
     'a role\'s `at` must name a node in `nodes` (or be omitted / "bastion")',
+  )
+  // a node's `from` (multi-hop parent) must name another node
+  .refine(
+    (env) =>
+      Object.values(env.nodes ?? {}).every((n) => !n.from || env.nodes?.[n.from] !== undefined),
+    "a node's `from` must name another node in `nodes`",
   );
 
 /** Type inferred from the schema (must stay assignable to types.ts EnvDescriptor). */

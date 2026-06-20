@@ -79,6 +79,57 @@ describe("resolveChain (RFC-0007 + RFC-0008)", () => {
     expect(() => resolveChain(env({ roles: { r: {} } }), "nope")).toThrow(/no role/);
     expect(() => resolveChain(env({ roles: { r: { at: "ghost" } } }), "r")).toThrow(/unknown node/);
   });
+
+  test("multi-level node reaches the parent first (from)", () => {
+    const e = env({
+      nodes: {
+        gateway: {
+          via: [{ type: "su", user: "j", secretRef: "e/j" }],
+          to: "10.0.0.1",
+          sshSecretRef: "e/gw",
+        },
+        app: {
+          from: "gateway",
+          via: [{ type: "su", user: "relay", secretRef: "e/relay" }],
+          to: "10.1.0.5",
+          sshSecretRef: "e/app",
+        },
+      },
+      roles: { r: { at: "app", su: [{ type: "su", user: "root", secretRef: "e/root" }] } },
+    });
+    expect(resolveChain(e, "r")).toEqual([
+      { kind: "su", user: "j", secretRef: "e/j" }, // on the bastion
+      { kind: "ssh", to: "10.0.0.1", secretRef: "e/gw" }, // → gateway
+      { kind: "su", user: "relay", secretRef: "e/relay" }, // on the gateway
+      { kind: "ssh", to: "10.1.0.5", secretRef: "e/app" }, // → app
+      { kind: "su", user: "root", secretRef: "e/root" }, // on app
+    ]);
+  });
+
+  test("multi-level with a templated leaf substitutes the target", () => {
+    const e = env({
+      nodes: {
+        gateway: { to: "10.0.0.1", sshSecretRef: "e/gw" },
+        worker: { from: "gateway", to: "${target}", sshSecretRef: "e/w", toPattern: "10\\.1\\..*" },
+      },
+      roles: { w: { at: "worker" } },
+    });
+    expect(resolveChain(e, "w", "10.1.2.3")).toEqual([
+      { kind: "ssh", to: "10.0.0.1", secretRef: "e/gw" },
+      { kind: "ssh", to: "10.1.2.3", secretRef: "e/w" },
+    ]);
+  });
+
+  test("a node cycle (from) is rejected", () => {
+    const e = env({
+      nodes: {
+        a: { from: "b", to: "1", sshSecretRef: "e/a" },
+        b: { from: "a", to: "2", sshSecretRef: "e/b" },
+      },
+      roles: { r: { at: "a" } },
+    });
+    expect(() => resolveChain(e, "r")).toThrow(/cycle/);
+  });
 });
 
 describe("resolveRole", () => {

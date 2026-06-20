@@ -72,8 +72,10 @@ single-identity env maps to one role (e.g. `default`): its bastion su chain → 
 
 ## 6. v1 scope / non-goals
 
-- **One level of nodes** (bastion → internal). Internal→internal chaining (`nodes[].from`)
-  is a later extension; not built now.
+- ~~**One level of nodes** (bastion → internal). Internal→internal chaining (`nodes[].from`)
+  is a later extension; not built now.~~ **Done:** `nodes[].from` names a parent node;
+  `resolveChain` recurses parent-first (with cycle detection), so `bastion → gateway →
+  app → …` chains work. The wizard's "从哪台到达?" prompt picks the parent.
 - Roles are named by the **skill** (operation-driven); operators don't memorize them.
 - No prefix-sharing optimization at runtime (each role establishes its own chain). A
   session-tree that shares the live prefix is a possible later optimization, not v1.

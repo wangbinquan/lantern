@@ -18,7 +18,9 @@ export interface SuStep {
 /** How to get a shell on a named internal node (RFC-0007): su on the bastion to an
  *  ssh-capable user, then ssh in. Shared by every role that lands on this node. */
 export interface NodeReach {
-  /** su chain on the bastion to become a user that can ssh to `to`. */
+  /** Reach this node FROM another node (multi-hop); undefined = from the bastion. */
+  from?: string;
+  /** su chain on the parent (bastion or `from` node) to become a user that can ssh to `to`. */
   via?: SuStep[];
   /** ssh target. May contain `${target}` (RFC-0008) → a template filled per exec. */
   to: string;
