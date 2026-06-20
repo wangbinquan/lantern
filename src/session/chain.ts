@@ -26,7 +26,9 @@ function resolveTo(
   if (!node.to.includes("${target}")) return { to: node.to, consumed: false };
   if (!target) throw new Error(`role "${roleName}" needs a target (node address is dynamic)`);
   if (!HOST.test(target)) throw new Error(`invalid target "${target}" (host characters only)`);
-  if (node.toPattern && !new RegExp(node.toPattern).test(target)) {
+  // anchor the allowlist to a FULL match — a substring match would let
+  // `10.0.0.5.evil.com` slip past `toPattern: 10\.0\.0\.[0-9]+` (Codex HIGH).
+  if (node.toPattern && !new RegExp(`^(?:${node.toPattern})$`).test(target)) {
     throw new Error(`target "${target}" is not allowed by toPattern /${node.toPattern}/`);
   }
   return { to: node.to.replaceAll("${target}", target), consumed: true };

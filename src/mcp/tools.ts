@@ -78,9 +78,13 @@ export async function execTool(deps: McpDeps, args: ExecArgs): Promise<ExecResul
   const env = deps.registry.getEnv(args.env);
   if (!env) throw new Error(`unknown environment "${args.env}"`);
   const role = resolveRole(env, args.role); // explicit, or the sole role, else throws
+  // Pre-flight: resolve the chain (unknown role / invalid target / bad toPattern throw
+  // HERE, before any remote command — so they propagate as errors WITHOUT being logged
+  // to the spectator as an "execution failure" (Codex L).
+  const session = deps.pool.get(args.env, role, args.target ?? "");
   let r;
   try {
-    r = await deps.pool.run(args.env, role, args.command, args.timeoutMs, args.target);
+    r = await session.run(args.command, { timeoutMs: args.timeoutMs });
   } catch (e) {
     // the command was issued but the session failed (timeout/marker loss) — still
     // mirror it to the spectator log (RFC-0006: executed OR failed, not just success).

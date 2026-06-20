@@ -53,12 +53,18 @@ describe("resolveChain (RFC-0007 + RFC-0008)", () => {
     expect(() => resolveChain(e, "w")).toThrow(/needs a target/);
   });
 
-  test("a target failing toPattern is rejected", () => {
+  test("toPattern is a FULL-match allowlist (no substring bypass — Codex HIGH)", () => {
     const e = env({
       nodes: { worker: { to: "${target}", sshSecretRef: "e/w", toPattern: "10\\.0\\.0\\.[0-9]+" } },
       roles: { w: { at: "worker" } },
     });
+    expect(resolveChain(e, "w", "10.0.0.5")).toEqual([
+      { kind: "ssh", to: "10.0.0.5", secretRef: "e/w" },
+    ]);
     expect(() => resolveChain(e, "w", "192.168.1.1")).toThrow(/toPattern/);
+    // a value CONTAINING an allowed substring must still be rejected
+    expect(() => resolveChain(e, "w", "10.0.0.5.evil.com")).toThrow(/toPattern/);
+    expect(() => resolveChain(e, "w", "x10.0.0.5")).toThrow(/toPattern/);
   });
 
   test("a target with shell metacharacters is rejected", () => {

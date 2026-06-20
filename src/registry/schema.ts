@@ -23,13 +23,26 @@ const HOST_OR_TEMPLATE = z
   .string()
   .regex(/^[A-Za-z0-9_.:${}-]+$/, "invalid host / target template");
 
+// a regex string that must compile (caught at config time, not at exec time)
+const REGEX_STR = z.string().refine(
+  (p) => {
+    try {
+      new RegExp(p);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  { message: "invalid regular expression" },
+);
+
 export const NodeReachSchema = z.object({
   from: z.string().optional(),
   via: z.array(SuStepSchema).optional(),
   to: HOST_OR_TEMPLATE,
   sshSecretRef: z.string().min(1),
-  promptRe: z.string().optional(),
-  toPattern: z.string().optional(),
+  promptRe: REGEX_STR.optional(),
+  toPattern: REGEX_STR.optional(),
 });
 
 export const RoleSchema = z.object({

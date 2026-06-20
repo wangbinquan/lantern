@@ -159,7 +159,10 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
   const nodes: NodeAnswer[] = [];
   if (await confirm(asker, "要配置内网节点吗?", false)) {
     do {
-      const name = await ask(asker, "  节点名 (如 app1)", { validate: v.username });
+      const name = await ask(asker, "  节点名 (如 app1)", {
+        validate: (s) =>
+          v.username(s) ?? (nodes.some((n) => n.name === s) ? `节点 "${s}" 已存在` : null),
+      });
       nodes.push(
         await promptNode(
           asker,
@@ -174,7 +177,10 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
   const nodeNames = nodes.map((n) => n.name);
   const roles: RoleAnswer[] = [];
   do {
-    const name = await ask(asker, "角色名 (如 restart / filexfer)", { validate: v.username });
+    const name = await ask(asker, "角色名 (如 restart / filexfer)", {
+      validate: (s) =>
+        v.username(s) ?? (roles.some((r) => r.name === s) ? `角色 "${s}" 已存在` : null),
+    });
     roles.push(await promptRole(asker, name, nodeNames));
   } while (await confirm(asker, "再加一个角色?", false));
 
@@ -217,10 +223,12 @@ export async function runEnvInitCli(id: string, opts: EnvInitOpts): Promise<void
       fetchFingerprint: (h, p) => fetchHostKeyFingerprint(h, p),
       send: (method, params) => {
         if (method === "env.add") {
-          registry.upsertEnv(params.env as EnvDescriptor);
+          // secrets BEFORE the descriptor: a keychain failure then leaves no
+          // descriptor pointing at a missing secretRef (Codex M).
           const secrets = params.secrets as Record<string, string> | undefined;
           if (secrets)
             for (const [ref, val] of Object.entries(secrets)) registry.setSecret(ref, val);
+          registry.upsertEnv(params.env as EnvDescriptor);
         } else {
           registry.setCurrent(params.id as string);
         }
@@ -246,8 +254,8 @@ export async function runRoleAddCli(envId: string, name: string): Promise<void> 
     const answer = await promptRole(tty.ask, name, Object.keys(env.nodes ?? {}));
     const { role, secrets } = buildRolePlan(envId, answer);
     env.roles[name] = role;
+    for (const [ref, val] of Object.entries(secrets)) registry.setSecret(ref, val); // secrets first (Codex M)
     registry.upsertEnv(env); // re-validates the whole descriptor (e.g. role.at names a node)
-    for (const [ref, val] of Object.entries(secrets)) registry.setSecret(ref, val);
     process.stderr.write(
       `✔ 角色 "${name}" 已加入 "${envId}"。exec(env="${envId}", role="${name}", …) 即可用。\n`,
     );
@@ -269,8 +277,8 @@ export async function runNodeAddCli(envId: string, name: string): Promise<void> 
     const answer = await promptNode(tty.ask, name, Object.keys(env.nodes ?? {}));
     const { node, secrets } = buildNodePlan(envId, answer);
     env.nodes = { ...env.nodes, [name]: node };
+    for (const [ref, val] of Object.entries(secrets)) registry.setSecret(ref, val); // secrets first (Codex M)
     registry.upsertEnv(env);
-    for (const [ref, val] of Object.entries(secrets)) registry.setSecret(ref, val);
     process.stderr.write(`✔ 节点 "${name}" 已加入 "${envId}"。现在角色可设 at="${name}"。\n`);
   } finally {
     tty.close();

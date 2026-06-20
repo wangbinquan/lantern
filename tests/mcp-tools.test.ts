@@ -67,6 +67,26 @@ describe("MCP tools (RFC-0005)", () => {
     }
   });
 
+  test("SessionPool evicts the LRU session past maxSessions (Codex M)", () => {
+    const registry = new Registry(":memory:");
+    registry.upsertEnv({
+      id: "e",
+      bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
+      roles: { a: {}, b: {}, c: {} },
+    });
+    const pool = new SessionPool(registry, localFactory, {}, 2); // cap of 2
+    try {
+      pool.get("e", "a"); // sessions are created lazily (no connect), so this is cheap
+      pool.get("e", "b");
+      pool.get("e", "c"); // 3rd distinct key → evict the LRU ("a")
+      expect(pool.has("e", "a")).toBe(false);
+      expect(pool.has("e", "b")).toBe(true);
+      expect(pool.has("e", "c")).toBe(true);
+    } finally {
+      registry.close();
+    }
+  });
+
   test("env_list returns configured env ids", () => {
     const { deps, registry } = setup();
     try {
@@ -120,7 +140,9 @@ describe("MCP tools (RFC-0005)", () => {
     const seen: ExecLogEntry[] = [];
     const deps: McpDeps = {
       registry,
-      pool: { run: () => Promise.reject(new Error("session timeout")) } as unknown as SessionPool,
+      pool: {
+        get: () => ({ run: () => Promise.reject(new Error("session timeout")) }),
+      } as unknown as SessionPool,
       onExec: (e) => seen.push(e),
     };
     try {
@@ -132,6 +154,34 @@ describe("MCP tools (RFC-0005)", () => {
       expect(seen[0]?.exitCode).toBeNull();
       expect(seen[0]?.refused).toBeUndefined();
     } finally {
+      registry.close();
+    }
+  });
+
+  test("a pre-flight failure (unknown role) is NOT logged as an exec error (Codex L)", async () => {
+    const registry = new Registry(":memory:");
+    registry.upsertEnv({
+      id: "e",
+      bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
+      roles: { a: {}, b: {} },
+    });
+    const seen: ExecLogEntry[] = [];
+    const pool = new SessionPool(registry, () => () => spawnPty(["bash", "--norc", "--noprofile"]));
+    try {
+      // unknown role throws during chain resolution, before any command runs
+      await expect(
+        execTool(
+          { registry, pool, onExec: (e) => seen.push(e) },
+          {
+            env: "e",
+            role: "ghost",
+            command: "echo hi",
+          },
+        ),
+      ).rejects.toThrow(/no role/);
+      expect(seen).toHaveLength(0); // not a command execution → nothing mirrored
+    } finally {
+      await pool.releaseAll();
       registry.close();
     }
   });
