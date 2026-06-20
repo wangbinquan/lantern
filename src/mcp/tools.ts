@@ -8,7 +8,7 @@ import type { SessionPool } from "../session";
 import type { Registry } from "../registry";
 import { catastrophicReason } from "../safety/catastrophic";
 
-/** One executed (or refused) command, for the read-only spectator log (RFC-0006). */
+/** One executed (or refused/failed) command, for the read-only spectator log (RFC-0006). */
 export interface ExecLogEntry {
   ts: number;
   env: string;
@@ -19,6 +19,8 @@ export interface ExecLogEntry {
   stdout?: string;
   /** Set instead of running, when the catastrophic backstop refused the command. */
   refused?: string;
+  /** Set when the command was issued but the session failed (timeout/marker loss). */
+  error?: string;
 }
 
 export interface McpDeps {
@@ -42,6 +44,15 @@ export interface ExecResult {
 /** stdout preview kept in the spectator log — bounds the file; full output is in the MCP result. */
 const MONITOR_STDOUT_CAP = 2048;
 
+/** First `maxBytes` of UTF-8, never cutting mid-codepoint (so the log stays byte-bounded). */
+function bytePreview(s: string, maxBytes: number): string {
+  const buf = Buffer.from(s, "utf8");
+  if (buf.length <= maxBytes) return s;
+  let end = maxBytes;
+  while (end > 0 && (buf[end]! & 0xc0) === 0x80) end--; // back off UTF-8 continuation bytes
+  return buf.subarray(0, end).toString("utf8");
+}
+
 /** Run a command on the named environment's SSH session (catastrophic backstop applies). */
 export async function execTool(deps: McpDeps, args: ExecArgs): Promise<ExecResult> {
   const reason = catastrophicReason(args.command);
@@ -57,14 +68,29 @@ export async function execTool(deps: McpDeps, args: ExecArgs): Promise<ExecResul
     throw new Error(`refused (catastrophic): ${reason}`);
   }
   if (!deps.registry.getEnv(args.env)) throw new Error(`unknown environment "${args.env}"`);
-  const r = await deps.pool.run(args.env, args.command, args.timeoutMs);
+  let r;
+  try {
+    r = await deps.pool.run(args.env, args.command, args.timeoutMs);
+  } catch (e) {
+    // the command was issued but the session failed (timeout/marker loss) — still
+    // mirror it to the spectator log (RFC-0006: executed OR failed, not just success).
+    deps.onExec?.({
+      ts: Date.now(),
+      env: args.env,
+      command: args.command,
+      exitCode: null,
+      stdoutBytes: 0,
+      error: (e as Error).message,
+    });
+    throw e;
+  }
   deps.onExec?.({
     ts: Date.now(),
     env: args.env,
     command: args.command,
     exitCode: r.exitCode,
     stdoutBytes: Buffer.byteLength(r.stdout),
-    stdout: r.stdout.slice(0, MONITOR_STDOUT_CAP),
+    stdout: bytePreview(r.stdout, MONITOR_STDOUT_CAP),
   });
   return { stdout: r.stdout, exitCode: r.exitCode };
 }

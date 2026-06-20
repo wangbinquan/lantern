@@ -22,6 +22,9 @@ export function formatExecLine(e: ExecLogEntry): string {
   if (e.refused) {
     return `${head} ${YELLOW}⛔ ${e.command}${RESET}\n    refused: ${e.refused}`;
   }
+  if (e.error) {
+    return `${head} ${RED}✗ ${e.command}${RESET}\n    error: ${e.error}`;
+  }
   const body = (e.stdout ?? "")
     .replace(/\n+$/, "")
     .split("\n")
@@ -29,7 +32,9 @@ export function formatExecLine(e: ExecLogEntry): string {
     .map((l) => `    ${l}`)
     .join("\n");
   const more =
-    e.stdoutBytes > (e.stdout?.length ?? 0) ? `  ${DIM}…(${e.stdoutBytes} B)${RESET}` : "";
+    e.stdoutBytes > Buffer.byteLength(e.stdout ?? "")
+      ? `  ${DIM}…(${e.stdoutBytes} B)${RESET}`
+      : "";
   const status =
     e.exitCode === 0 ? `${GREEN}→ exit 0${RESET}` : `${RED}→ exit ${e.exitCode}${RESET}`;
   return `${head} $ ${e.command}\n${body ? body + "\n" : ""}    ${status}${more}`;
@@ -45,16 +50,24 @@ function emit(line: string): void {
   process.stdout.write(formatExecLine(e) + "\n");
 }
 
-/** Read bytes [offset, EOF) without slurping the whole file each poll. */
-function readFrom(path: string, offset: number): { chunk: string; next: number } {
+/**
+ * Read bytes [offset, EOF) without slurping the whole file each poll. If the file
+ * shrank (truncated/rotated), re-read from the start and flag `reset` so the caller
+ * drops any stale partial line.
+ */
+export function nextRead(
+  path: string,
+  offset: number,
+): { chunk: string; next: number; reset: boolean } {
   const size = statSync(path).size;
-  if (size < offset) return { chunk: "", next: size }; // truncated/rotated → reset
-  if (size === offset) return { chunk: "", next: offset };
+  const reset = size < offset;
+  const from = reset ? 0 : offset;
+  if (size === from) return { chunk: "", next: size, reset };
   const fd = openSync(path, "r");
   try {
-    const buf = Buffer.allocUnsafe(size - offset);
-    readSync(fd, buf, 0, buf.length, offset);
-    return { chunk: buf.toString("utf8"), next: size };
+    const buf = Buffer.allocUnsafe(size - from);
+    readSync(fd, buf, 0, buf.length, from);
+    return { chunk: buf.toString("utf8"), next: size, reset };
   } finally {
     closeSync(fd);
   }
@@ -71,7 +84,7 @@ export async function runMonitor(): Promise<void> {
   // start just before EOF but replay the last few lines for context
   let offset = 0;
   if (existsSync(path)) {
-    const { chunk, next } = readFrom(path, 0);
+    const { chunk, next } = nextRead(path, 0);
     const lines = chunk.split("\n").filter(Boolean);
     for (const l of lines.slice(-5)) emit(l);
     offset = next;
@@ -79,8 +92,9 @@ export async function runMonitor(): Promise<void> {
   for (;;) {
     await sleep(250);
     if (!existsSync(path)) continue;
-    const { chunk, next } = readFrom(path, offset);
+    const { chunk, next, reset } = nextRead(path, offset);
     offset = next;
+    if (reset) buffered = ""; // file rotated — drop the stale partial line
     if (!chunk) continue;
     buffered += chunk;
     const parts = buffered.split("\n");

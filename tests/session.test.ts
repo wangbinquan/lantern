@@ -46,6 +46,32 @@ function mgr(desc: EnvDescriptor, events?: SessionEvent[], extra: Partial<Sessio
 }
 
 describe("SessionManager", () => {
+  test("releases the transport when establish() fails mid-setup (no leak, Codex H2)", async () => {
+    class FakeTransport {
+      closed = 0;
+      write(_d: string): void {} // never echoes the sync marker → rawRun times out
+      onData(_cb: (c: string) => void): void {}
+      close(): void {
+        this.closed++;
+      }
+      readonly exited = new Promise<number>(() => {}); // never exits
+    }
+    const made: FakeTransport[] = [];
+    const s = new SessionManager(
+      () => {
+        const t = new FakeTransport();
+        made.push(t);
+        return t as unknown as import("../src/pty").PtyTransport;
+      },
+      descriptor(),
+      { resolveSecret, whoamiCmd: WHOAMI, syncTimeoutMs: 150, commandTimeoutMs: 150 },
+    );
+    await expect(s.connect()).rejects.toThrow(); // sync marker never arrives
+    expect(made.length).toBe(1);
+    expect(made[0]!.closed).toBe(1); // released on failure, not leaked
+    await s.release();
+  });
+
   test("escalates via su and runs commands as the target user", async () => {
     const s = mgr(descriptor({ escalate: [{ type: "su", user: "high", secretRef: "high" }] }));
     try {

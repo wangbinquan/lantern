@@ -30,7 +30,14 @@ function hasCatastrophicRm(cmd: string): boolean {
 
 /** Reason string if the command is catastrophic (→ refuse), else null. */
 export function catastrophicReason(command: string): string | null {
-  const cmd = command.trim();
+  // Collapse cheap keyword-splitting obfuscations before matching: empty quote
+  // pairs (`r""m`) and escaping backslashes (`r\m`, `rm\ -rf`). Deliberate
+  // base64/eval obfuscation is out of scope for a regex backstop — the real
+  // defense is the MCP client's per-exec confirmation gate (RFC-0005 §4).
+  const cmd = command
+    .replace(/(["'])\1/g, "")
+    .replace(/\\/g, "")
+    .trim();
   if (hasCatastrophicRm(cmd)) return "rm -rf (recursive+force)";
   for (const c of CATASTROPHIC) {
     if (c.re.test(cmd)) return c.reason;

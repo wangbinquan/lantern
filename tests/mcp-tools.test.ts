@@ -108,4 +108,29 @@ describe("MCP tools (RFC-0005)", () => {
       registry.close();
     }
   });
+
+  test("a session failure is still logged (issued but errored — Codex M3)", async () => {
+    const registry = new Registry(":memory:");
+    registry.upsertEnv({
+      id: "e",
+      bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
+    });
+    const seen: ExecLogEntry[] = [];
+    const deps: McpDeps = {
+      registry,
+      pool: { run: () => Promise.reject(new Error("session timeout")) } as unknown as SessionPool,
+      onExec: (e) => seen.push(e),
+    };
+    try {
+      await expect(execTool(deps, { env: "e", command: "echo hi" })).rejects.toThrow(
+        /session timeout/,
+      );
+      expect(seen.length).toBe(1);
+      expect(seen[0]?.error).toContain("session timeout");
+      expect(seen[0]?.exitCode).toBeNull();
+      expect(seen[0]?.refused).toBeUndefined();
+    } finally {
+      registry.close();
+    }
+  });
 });

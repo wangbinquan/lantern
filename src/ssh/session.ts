@@ -169,26 +169,33 @@ export class SessionManager {
     const t = await this.factory();
     this.transport = t;
     this.factoryCalls += 1;
-    this.exp.reset();
-    t.onData((chunk) => {
-      this.exp.feed(chunk); // the expecter still gets the RAW chunk (markers intact)
+    try {
+      this.exp.reset();
+      t.onData((chunk) => {
+        this.exp.feed(chunk); // the expecter still gets the RAW chunk (markers intact)
+        this.lastActivity = Date.now();
+        // observers/watch see clean output — strip the internal completion markers
+        const visible = stripMarkers(this.redact(stripAnsi(chunk)));
+        if (visible.length > 0) this.emit("stdout", visible);
+      });
+
+      if (this.descriptor.shellInit) this.writeRaw(this.descriptor.shellInit + "\n");
+      // initial responsiveness sync (marker round-trip past any banner/MOTD)
+      await this.rawRun("true", this.syncTimeoutMs);
+
+      for (const step of this.descriptor.escalate ?? []) await this.suStep(step);
+      for (const hop of this.descriptor.hops ?? []) await this.doHop(hop);
+
+      this.connected = true;
+      this.connectedAt = Date.now();
       this.lastActivity = Date.now();
-      // observers/watch see clean output — strip the internal completion markers
-      const visible = stripMarkers(this.redact(stripAnsi(chunk)));
-      if (visible.length > 0) this.emit("stdout", visible);
-    });
-
-    if (this.descriptor.shellInit) this.writeRaw(this.descriptor.shellInit + "\n");
-    // initial responsiveness sync (marker round-trip past any banner/MOTD)
-    await this.rawRun("true", this.syncTimeoutMs);
-
-    for (const step of this.descriptor.escalate ?? []) await this.suStep(step);
-    for (const hop of this.descriptor.hops ?? []) await this.doHop(hop);
-
-    this.connected = true;
-    this.connectedAt = Date.now();
-    this.lastActivity = Date.now();
-    this.emit("ready", ""); // signals the chain is fully established (RFC-0001)
+      this.emit("ready", ""); // signals the chain is fully established (RFC-0001)
+    } catch (e) {
+      // a failure mid-setup (sync timeout, su/hop prompt mismatch) leaves a
+      // half-open transport — close it so the next connect() can't leak it (Codex H2).
+      await this.release();
+      throw e;
+    }
   }
 
   private async suStep(step: SuStep): Promise<void> {

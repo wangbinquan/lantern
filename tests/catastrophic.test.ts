@@ -13,6 +13,13 @@ describe("catastrophicReason (RFC-0005 backstop)", () => {
     expect(catastrophicReason(":(){ :|:& };:")).toContain("fork bomb");
   });
 
+  test("normalizes cheap obfuscations (empty quotes / backslashes) before matching", () => {
+    expect(catastrophicReason('r""m -rf /')).toContain("rm -rf");
+    expect(catastrophicReason("r''m -rf /data")).toContain("rm -rf");
+    expect(catastrophicReason('m""kfs.ext4 /dev/sda')).toContain("mkfs");
+    expect(catastrophicReason("rm\\ -rf /data")).toContain("rm -rf"); // backslash-escaped space
+  });
+
   test("allows normal commands (incl. non-recursive rm)", () => {
     expect(catastrophicReason("tail -n 100 /app/log")).toBeNull();
     expect(catastrophicReason("rm /tmp/x")).toBeNull();
