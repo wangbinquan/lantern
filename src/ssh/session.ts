@@ -31,6 +31,8 @@ export interface SessionEvent {
 export interface RunResult {
   stdout: string;
   exitCode: number | null;
+  /** True if stdout was capped at maxStdoutBytes (Codex M5). */
+  truncated?: boolean;
 }
 
 export interface SessionOptions {
@@ -41,6 +43,8 @@ export interface SessionOptions {
   passwordPrompt?: RegExp;
   syncTimeoutMs?: number;
   commandTimeoutMs?: number;
+  /** Hard cap on captured stdout per command (default 1 MB; Codex M5). */
+  maxStdoutBytes?: number;
   onEvent?: (e: SessionEvent) => void;
 }
 
@@ -76,6 +80,9 @@ export class SessionManager {
   }
   private get commandTimeoutMs(): number {
     return this.opts.commandTimeoutMs ?? 30_000;
+  }
+  private get maxStdoutBytes(): number {
+    return this.opts.maxStdoutBytes ?? 1_000_000;
   }
 
   /** Establish the session (idempotent; concurrent calls share one attempt). */
@@ -227,10 +234,14 @@ export class SessionManager {
     // before = command output, match = the marker line; recombine for parsing.
     const completion = parseCompletion(captured.before + captured.match, id);
     this.lastActivity = Date.now();
-    return {
-      stdout: this.redact(stripAnsi(completion.stdout)),
-      exitCode: completion.exitCode,
-    };
+    let stdout = this.redact(stripAnsi(completion.stdout));
+    let truncated = false;
+    if (stdout.length > this.maxStdoutBytes) {
+      const dropped = stdout.length - this.maxStdoutBytes;
+      stdout = stdout.slice(0, this.maxStdoutBytes) + `\n[... truncated ${dropped} bytes]`;
+      truncated = true;
+    }
+    return { stdout, exitCode: completion.exitCode, truncated };
   }
 
   private writeRaw(data: string): void {

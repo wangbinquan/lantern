@@ -187,4 +187,20 @@ describe("SessionManager", () => {
       await s.release();
     }
   });
+
+  test("caps oversized command output (M5)", async () => {
+    const s = mgr(descriptor(), undefined, { maxStdoutBytes: 50 });
+    try {
+      await s.connect();
+      const r = await s.run("printf 'x%.0s' $(seq 1 500)"); // 500 x's
+      expect(r.truncated).toBe(true);
+      expect(r.stdout.startsWith("x".repeat(50))).toBe(true);
+      expect(r.stdout).toContain("truncated");
+      expect(r.stdout.length).toBeLessThan(120);
+      const small = await s.run("echo small");
+      expect(small.truncated).toBe(false);
+    } finally {
+      await s.release();
+    }
+  });
 });

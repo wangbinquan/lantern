@@ -108,8 +108,8 @@
 - **M1 policy 镜像与 opencode `findLast` 不一致** — 🔧**已改**:核实源码 `evaluate()` 为 findLast;`policy.ts` 改纯 findLast + 默认 ask;新增"后置 allow 覆盖前置 deny"测试。**规则顺序成约定:deny 必须置后**。
 - **M2 AGENTS.md 与实际 deny 不符** — 🔧**已改**:opencode.json 加 `su` deny;AGENTS.md 改为"ssh/su 拒绝、kubectl/管道需确认应拒绝"的准确表述。
 - **M3 审批者看不到展开后的远端命令** — 🔧**已改**:`lantern` CLI 在 stderr 回显 `[lantern <env>] $ <expanded command>`。
-- **M4 审计漏 env.add/env.use、无 actor/关联** — 📝**记录**:列入审计加固(actor/peer-UID/关联 opencode 审批事件)Phase 2。
-- **M5 state/snapshot 输出无上限** — 📝**记录**:建议在 `SessionManager.run`/`pool.run` 统一字节截断(当前仅 logs 有 `head -c`)。列后续。
+- **M4 审计漏 env.add/env.use** — 🔧**已改(部分)**:env.add/env.use 现已审计。actor/peer-UID(Bun 未暴露 `SO_PEERCRED`)/关联 opencode 审批事件 留 Phase 2。
+- **M5 输出无上限** — 🔧**已改**:`SessionManager.run` 统一对 stdout 设 `maxStdoutBytes`(默认 1MB)硬截断并置 `truncated`,覆盖所有子命令(state/snapshot/exec),不再只靠 logs 的 `head -c`。
 
 ## Low
 - **L1 `LANTERN_LOCAL_SHELL` 静默本机执行** — 🔧**已改**:启动打印醒目 DEV/DEMO 警告横幅。

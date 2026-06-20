@@ -253,4 +253,21 @@ describe("dispatch", () => {
     expect(bad.ok).toBe(false);
     await pool.releaseAll();
   });
+
+  test("env.add and env.use are audited (M4)", async () => {
+    const registry = new Registry(":memory:");
+    const pool = new SessionPool(registry, () => localFactory());
+    const audit: AuditEntry[] = [];
+    const deps: DispatchDeps = { registry, pool, audit: (e) => audit.push(e) };
+    const env: EnvDescriptor = {
+      id: "a",
+      form: "k8s",
+      bastion: { host: "h", loginUser: "low", auth: { type: "password", secretRef: "a/low" } },
+    };
+    await dispatch(deps, REQ("env.add", { env }));
+    await dispatch(deps, REQ("env.use", { id: "a" }));
+    expect(audit.map((e) => e.method)).toEqual(["env.add", "env.use"]);
+    expect(audit[1]).toMatchObject({ envId: "a", method: "env.use" });
+    await pool.releaseAll();
+  });
 });

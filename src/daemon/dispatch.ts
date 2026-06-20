@@ -74,6 +74,18 @@ function record(
   });
 }
 
+/** Audit a non-command RPC (env.add/env.use) — Codex M4. */
+function auditMeta(deps: DispatchDeps, envId: string, method: string, command: string): void {
+  deps.audit?.({
+    ts: (deps.now ?? Date.now)(),
+    envId,
+    method,
+    command,
+    exitCode: null,
+    stdoutBytes: 0,
+  });
+}
+
 async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
   const p = req.params ?? {};
   switch (req.method) {
@@ -88,7 +100,9 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
           deps.registry.setSecret(ref, String(value));
         }
       }
-      return { id: (p.env as EnvDescriptor).id };
+      const id = (p.env as EnvDescriptor).id;
+      auditMeta(deps, id, "env.add", "(register env + secrets)");
+      return { id };
     }
 
     case "env.list":
@@ -98,6 +112,7 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
       const id = strOpt(p.id);
       if (!id) throw new Error("missing env id");
       deps.registry.setCurrent(id);
+      auditMeta(deps, id, "env.use", "(select environment)");
       return { current: id };
     }
 
