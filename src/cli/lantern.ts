@@ -7,12 +7,14 @@
  */
 import { registryDbPath } from "../paths";
 import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
-import { runEnvInitCli } from "./env-init";
+import { runEnvInitCli, runNodeAddCli, runRoleAddCli } from "./env-init";
 import { runMonitor } from "./monitor";
 
 const HELP = `lantern — env-admin for the Lantern MCP server
 
   lantern env init <id> [--insecure-host-key] [--no-use]   # interactive: add an environment (creds → keychain)
+  lantern env node add <env> <node>                        # add one reachable internal node
+  lantern env role add <env> <role>                        # add one per-operation identity (node + su user)
   lantern env list
   lantern env use <id>
   lantern env current
@@ -54,6 +56,17 @@ if (sub === "init") {
     noUse: rest.includes("--no-use"),
   });
   process.exit(0);
+}
+// incremental, interactive: `env role add <env> <role>` / `env node add <env> <node>`
+if ((sub === "role" || sub === "node") && arg === "add") {
+  try {
+    if (sub === "role") await runRoleAddCli(rest[0]!, rest[1]!);
+    else await runNodeAddCli(rest[0]!, rest[1]!);
+    process.exit(0);
+  } catch (e) {
+    process.stderr.write(`lantern: ${(e as Error).message}\n`);
+    process.exit(1);
+  }
 }
 
 const reg = openRegistry();

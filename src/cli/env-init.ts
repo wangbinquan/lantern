@@ -8,6 +8,8 @@ import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
 import type { EnvDescriptor } from "../types";
 import {
   buildEnvInitPlan,
+  buildNodePlan,
+  buildRolePlan,
   type AuthAnswer,
   type EnvInitAnswers,
   type NodeAnswer,
@@ -50,6 +52,31 @@ async function collectSuChain(asker: Asker, firstQuestion: string): Promise<SuAn
     chain.push({ user, password });
   }
   return chain;
+}
+
+/** Prompt for one node's reach (su chain on the bastion → ssh in). Name is given. */
+export async function promptNode(asker: Asker, name: string): Promise<NodeAnswer> {
+  const via = await collectSuChain(asker, "  到该节点前,在堡垒上 su 到谁?");
+  const to = await ask(asker, "  节点地址", { validate: v.host });
+  const sshPassword = await ask(asker, "  ssh 该节点的密码", {
+    secret: true,
+    validate: v.nonEmpty,
+  });
+  return { name, via: via.length ? via : undefined, to, sshPassword };
+}
+
+/** Prompt for one role (where to land + su chain). Name is given; `at` ∈ bastion|nodeNames. */
+export async function promptRole(
+  asker: Asker,
+  name: string,
+  nodeNames: string[],
+): Promise<RoleAnswer> {
+  const at = await ask(asker, `  在哪台机? [${["bastion", ...nodeNames].join("/")}]`, {
+    default: "bastion",
+    validate: oneOf(["bastion", ...nodeNames]),
+  });
+  const su = await collectSuChain(asker, `  在 ${at} 上 su 成谁?`);
+  return { name, at: at === "bastion" ? undefined : at, su: su.length ? su : undefined };
 }
 
 export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDeps): Promise<void> {
@@ -112,28 +139,16 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
   if (await confirm(asker, "要配置内网节点吗?", false)) {
     do {
       const name = await ask(asker, "  节点名 (如 app1)", { validate: v.username });
-      const via = await collectSuChain(asker, "  到该节点前,在堡垒上 su 到谁?");
-      const to = await ask(asker, "  节点地址", { validate: v.host });
-      const sshPassword = await ask(asker, "  ssh 该节点的密码", {
-        secret: true,
-        validate: v.nonEmpty,
-      });
-      nodes.push({ name, via: via.length ? via : undefined, to, sshPassword });
+      nodes.push(await promptNode(asker, name));
     } while (await confirm(asker, "再配一个节点?", false));
   }
 
   // ---- roles (per-operation identities; at least one) ----
   const nodeNames = nodes.map((n) => n.name);
-  const roleAt = oneOf(["bastion", ...nodeNames]);
   const roles: RoleAnswer[] = [];
   do {
     const name = await ask(asker, "角色名 (如 restart / filexfer)", { validate: v.username });
-    const at = await ask(asker, `  在哪台机? [${["bastion", ...nodeNames].join("/")}]`, {
-      default: "bastion",
-      validate: roleAt,
-    });
-    const su = await collectSuChain(asker, `  在 ${at} 上 su 成谁?`);
-    roles.push({ name, at: at === "bastion" ? undefined : at, su: su.length ? su : undefined });
+    roles.push(await promptRole(asker, name, nodeNames));
   } while (await confirm(asker, "再加一个角色?", false));
 
   // ---- assemble + deliver (connection + roles only — business is each skill's job) ----
@@ -160,13 +175,14 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
   log(`  环境已就绪。opencode 经 MCP 的 exec 工具即可在 "${id}" 上执行命令。`);
 }
 
+function openInitRegistry(): Registry {
+  const useKeychain = process.env.LANTERN_LOCAL_SHELL !== "1" && keychainAvailable();
+  return new Registry(registryDbPath(), useKeychain ? new KeychainSecretStore() : undefined);
+}
+
 /** Production wiring: real TTY asker + ssh-keyscan, writing the registry directly (no daemon). */
 export async function runEnvInitCli(id: string, opts: EnvInitOpts): Promise<void> {
-  const useKeychain = process.env.LANTERN_LOCAL_SHELL !== "1" && keychainAvailable();
-  const registry = new Registry(
-    registryDbPath(),
-    useKeychain ? new KeychainSecretStore() : undefined,
-  );
+  const registry = openInitRegistry();
   const tty = makeTtyAsker();
   try {
     await runEnvInit(id, opts, {
@@ -185,6 +201,50 @@ export async function runEnvInitCli(id: string, opts: EnvInitOpts): Promise<void
       },
       log: (m) => process.stderr.write(m + "\n"),
     });
+  } finally {
+    tty.close();
+    registry.close();
+  }
+}
+
+/** `lantern env role add <env> <role>` — add one identity to an existing env (RFC-0007). */
+export async function runRoleAddCli(envId: string, name: string): Promise<void> {
+  if (!envId || !name) throw new Error("usage: lantern env role add <env> <role>");
+  const registry = openInitRegistry();
+  const tty = makeTtyAsker();
+  try {
+    const env = registry.getEnv(envId);
+    if (!env) throw new Error(`unknown environment "${envId}"`);
+    if (env.roles[name]) throw new Error(`role "${name}" already exists in "${envId}"`);
+    const answer = await promptRole(tty.ask, name, Object.keys(env.nodes ?? {}));
+    const { role, secrets } = buildRolePlan(envId, answer);
+    env.roles[name] = role;
+    registry.upsertEnv(env); // re-validates the whole descriptor (e.g. role.at names a node)
+    for (const [ref, val] of Object.entries(secrets)) registry.setSecret(ref, val);
+    process.stderr.write(
+      `✔ 角色 "${name}" 已加入 "${envId}"。exec(env="${envId}", role="${name}", …) 即可用。\n`,
+    );
+  } finally {
+    tty.close();
+    registry.close();
+  }
+}
+
+/** `lantern env node add <env> <node>` — add one reachable node (RFC-0007). */
+export async function runNodeAddCli(envId: string, name: string): Promise<void> {
+  if (!envId || !name) throw new Error("usage: lantern env node add <env> <node>");
+  const registry = openInitRegistry();
+  const tty = makeTtyAsker();
+  try {
+    const env = registry.getEnv(envId);
+    if (!env) throw new Error(`unknown environment "${envId}"`);
+    if (env.nodes?.[name]) throw new Error(`node "${name}" already exists in "${envId}"`);
+    const answer = await promptNode(tty.ask, name);
+    const { node, secrets } = buildNodePlan(envId, answer);
+    env.nodes = { ...env.nodes, [name]: node };
+    registry.upsertEnv(env);
+    for (const [ref, val] of Object.entries(secrets)) registry.setSecret(ref, val);
+    process.stderr.write(`✔ 节点 "${name}" 已加入 "${envId}"。现在角色可设 at="${name}"。\n`);
   } finally {
     tty.close();
     registry.close();

@@ -61,19 +61,61 @@ export interface EnvInitPlan {
  * the schema's message) if any field is invalid — e.g. a username/host carrying
  * shell metacharacters (Codex H2).
  */
-export function buildEnvInitPlan(a: EnvInitAnswers): EnvInitPlan {
-  const secrets: Record<string, string> = {};
-  const ref = (name: string, value: string): string => {
-    const r = `${a.id}/${name}`;
+/** Registers a secretRef → value and returns the ref. */
+type Ref = (name: string, value: string) => string;
+
+function refInto(envId: string, secrets: Record<string, string>): Ref {
+  return (name, value) => {
+    const r = `${envId}/${name}`;
     secrets[r] = value;
     return r;
   };
-  const suChain = (steps: SuAnswer[], prefix: string): SuStep[] =>
-    steps.map((s, i) => ({
-      type: "su",
-      user: s.user,
-      secretRef: ref(`${prefix}${i}`, s.password),
-    }));
+}
+
+function suChainWith(steps: SuAnswer[], prefix: string, ref: Ref): SuStep[] {
+  return steps.map((s, i) => ({
+    type: "su",
+    user: s.user,
+    secretRef: ref(`${prefix}${i}`, s.password),
+  }));
+}
+
+/** Build one role's descriptor entry, registering its su passwords via `ref`. */
+export function buildRole(a: RoleAnswer, ref: Ref): Role {
+  const role: Role = {};
+  if (a.at) role.at = a.at;
+  if (a.su && a.su.length > 0) role.su = suChainWith(a.su, `role-${a.name}-su`, ref);
+  return role;
+}
+
+/** Build one node's reach descriptor, registering its via + ssh passwords via `ref`. */
+export function buildNode(a: NodeAnswer, ref: Ref): NodeReach {
+  const node: NodeReach = { to: a.to, sshSecretRef: ref(`node-${a.name}-ssh`, a.sshPassword) };
+  if (a.via && a.via.length > 0) node.via = suChainWith(a.via, `node-${a.name}-via`, ref);
+  return node;
+}
+
+/** Incremental: a single role + its secrets, for `lantern env role add`. */
+export function buildRolePlan(
+  envId: string,
+  a: RoleAnswer,
+): { role: Role; secrets: Record<string, string> } {
+  const secrets: Record<string, string> = {};
+  return { role: buildRole(a, refInto(envId, secrets)), secrets };
+}
+
+/** Incremental: a single node + its secrets, for `lantern env node add`. */
+export function buildNodePlan(
+  envId: string,
+  a: NodeAnswer,
+): { node: NodeReach; secrets: Record<string, string> } {
+  const secrets: Record<string, string> = {};
+  return { node: buildNode(a, refInto(envId, secrets)), secrets };
+}
+
+export function buildEnvInitPlan(a: EnvInitAnswers): EnvInitPlan {
+  const secrets: Record<string, string> = {};
+  const ref = refInto(a.id, secrets);
 
   let auth: BastionAuth;
   if (a.bastion.auth.kind === "password") {
@@ -89,19 +131,10 @@ export function buildEnvInitPlan(a: EnvInitAnswers): EnvInitPlan {
   if (a.bastion.insecureHostKey) bastion.insecureHostKey = true;
 
   const nodes: Record<string, NodeReach> = {};
-  for (const n of a.nodes ?? []) {
-    const node: NodeReach = { to: n.to, sshSecretRef: ref(`node-${n.name}-ssh`, n.sshPassword) };
-    if (n.via && n.via.length > 0) node.via = suChain(n.via, `node-${n.name}-via`);
-    nodes[n.name] = node;
-  }
+  for (const n of a.nodes ?? []) nodes[n.name] = buildNode(n, ref);
 
   const roles: Record<string, Role> = {};
-  for (const r of a.roles) {
-    const role: Role = {};
-    if (r.at) role.at = r.at;
-    if (r.su && r.su.length > 0) role.su = suChain(r.su, `role-${r.name}-su`);
-    roles[r.name] = role;
-  }
+  for (const r of a.roles) roles[r.name] = buildRole(r, ref);
 
   const env: EnvDescriptor = { id: a.id, bastion, roles };
   if (a.label) env.label = a.label;

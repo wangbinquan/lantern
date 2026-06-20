@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { buildEnvInitPlan, type EnvInitAnswers } from "../src/cli/env-init-plan";
-import { type EnvInitDeps, runEnvInit } from "../src/cli/env-init";
+import {
+  buildEnvInitPlan,
+  buildNodePlan,
+  buildRolePlan,
+  type EnvInitAnswers,
+} from "../src/cli/env-init-plan";
+import { type EnvInitDeps, promptNode, promptRole, runEnvInit } from "../src/cli/env-init";
 import type { Asker } from "../src/cli/prompt";
-import { EnvDescriptorSchema } from "../src/registry";
+import { EnvDescriptorSchema, Registry } from "../src/registry";
 import type { EnvDescriptor } from "../src/types";
 
 function scriptedAsker(answers: string[]): Asker {
@@ -167,6 +172,83 @@ describe("buildEnvInitPlan (RFC-0007)", () => {
 
   test("rejects a role.at that names no node", () => {
     expect(() => buildEnvInitPlan({ ...base, roles: [{ name: "x", at: "ghost" }] })).toThrow();
+  });
+});
+
+describe("incremental role / node (lantern env role|node add)", () => {
+  test("buildRolePlan builds one role + its secrets", () => {
+    const { role, secrets } = buildRolePlan("prod-a", {
+      name: "restart",
+      at: "app1",
+      su: [{ user: "svc", password: "p" }],
+    });
+    expect(role).toEqual({
+      at: "app1",
+      su: [{ type: "su", user: "svc", secretRef: "prod-a/role-restart-su0" }],
+    });
+    expect(secrets).toEqual({ "prod-a/role-restart-su0": "p" });
+  });
+
+  test("buildNodePlan builds one node + its secrets", () => {
+    const { node, secrets } = buildNodePlan("prod-a", {
+      name: "app1",
+      via: [{ user: "jump", password: "v" }],
+      to: "10.0.0.9",
+      sshPassword: "s",
+    });
+    expect(node).toEqual({
+      via: [{ type: "su", user: "jump", secretRef: "prod-a/node-app1-via0" }],
+      to: "10.0.0.9",
+      sshSecretRef: "prod-a/node-app1-ssh",
+    });
+    expect(secrets).toEqual({ "prod-a/node-app1-via0": "v", "prod-a/node-app1-ssh": "s" });
+  });
+
+  test("promptRole collects at + su; bastion → at undefined", async () => {
+    expect(
+      await promptRole(scriptedAsker(["app1", "svcuser", "svcpw", ""]), "restart", ["app1"]),
+    ).toEqual({
+      name: "restart",
+      at: "app1",
+      su: [{ user: "svcuser", password: "svcpw" }],
+    });
+    expect(await promptRole(scriptedAsker(["", "deployer", "dp", ""]), "filexfer", [])).toEqual({
+      name: "filexfer",
+      at: undefined,
+      su: [{ user: "deployer", password: "dp" }],
+    });
+  });
+
+  test("promptNode collects via + to + ssh password", async () => {
+    expect(await promptNode(scriptedAsker(["jump", "jp", "", "10.0.0.9", "sp"]), "app1")).toEqual({
+      name: "app1",
+      via: [{ user: "jump", password: "jp" }],
+      to: "10.0.0.9",
+      sshPassword: "sp",
+    });
+  });
+
+  test("adding a role merges into the env and re-validates on upsert", () => {
+    const reg = new Registry(":memory:");
+    reg.upsertEnv({
+      id: "e",
+      bastion: { host: "h", loginUser: "low", auth: { type: "password", secretRef: "e/low" } },
+      nodes: { app1: { to: "10.0.0.9", sshSecretRef: "e/app1-ssh" } },
+      roles: { base: {} },
+    });
+    const env = reg.getEnv("e")!;
+    const { role } = buildRolePlan("e", {
+      name: "restart",
+      at: "app1",
+      su: [{ user: "svc", password: "p" }],
+    });
+    env.roles.restart = role;
+    reg.upsertEnv(env);
+    expect(Object.keys(reg.getEnv("e")!.roles).sort()).toEqual(["base", "restart"]);
+    // a role.at that names no node is rejected by the same upsert path
+    env.roles.bad = { at: "ghost" };
+    expect(() => reg.upsertEnv(env)).toThrow();
+    reg.close();
   });
 });
 

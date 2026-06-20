@@ -29,8 +29,10 @@
 
 1. **配置环境(out-of-band,密钥不经模型)**——交互向导,隐藏输入直接进钥匙串、host key 经 `ssh-keyscan` 确认后 pin(TOFU):
    ```bash
-   bun src/cli/lantern.ts env init prod-a       # 问登录 + 内网节点 + 各操作角色
-   bun src/cli/lantern.ts env list              # 显示 id/label/角色名
+   bun src/cli/lantern.ts env init prod-a              # 问登录 + 内网节点 + 各操作角色
+   bun src/cli/lantern.ts env node add prod-a app2     # 之后增量加一个节点
+   bun src/cli/lantern.ts env role add prod-a restart  # 之后增量加一个角色(节点+su 用户)
+   bun src/cli/lantern.ts env list                     # 显示 id/label/角色名
    ```
 2. **在 opencode v2 配置里声明 MCP server**(opencode 用命令拉起它,走 stdio):
    ```jsonc

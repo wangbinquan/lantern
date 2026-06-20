@@ -9,7 +9,9 @@ logs, diagnosing, deploying) are **your own skills**, composed from `exec` calls
 1. Configure an environment out-of-band (secrets never touch the model):
    `bun src/cli/lantern.ts env init <id>` — prompts for the login, internal nodes,
    and per-operation roles; hidden passwords go to the OS keychain; host key
-   auto-pinned (TOFU). List/select/remove with `lantern env list|use|current|rm`.
+   auto-pinned (TOFU). List/select/remove with `lantern env list|use|current|rm`;
+   add identities incrementally with `lantern env node add <env> <node>` /
+   `lantern env role add <env> <role>`.
 2. Declare the MCP server in opencode v2 config so opencode spawns it over stdio:
    ```jsonc
    { "mcp": { "servers": {
