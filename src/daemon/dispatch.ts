@@ -10,6 +10,8 @@ import type { EnvDescriptor, ServiceDescriptor } from "../types";
 import type { AuditSink } from "./audit";
 import { buildLogs, buildSnapshot, buildState, locatePidCommand, type LogsFlags } from "./commands";
 import type { SessionPool } from "./pool";
+import { doPut, type SwapRun } from "./swap";
+import { readArtifact } from "./upload";
 import type { RpcRequest, RpcResponse } from "./protocol";
 import type { EventBus } from "./watch";
 
@@ -229,6 +231,22 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
         verdict: verdict.verdict,
         reason: verdict.reason,
       };
+    }
+
+    case "put": {
+      const env = resolveEnv(deps, p);
+      const svc = resolveService(env, p);
+      const file = strOpt(p.file);
+      if (!file) throw new Error("missing --file");
+      const artifact = await readArtifact(file);
+      const run: SwapRun = (cmd) => deps.pool.run(env.id, cmd, numOpt(p.timeoutMs));
+      pubCommand(deps, env.id, "put", `put ${file} → ${svc.swap?.remotePath ?? "(no remotePath)"}`);
+      const result = await doPut(run, svc, artifact, numOpt(p.chunkSize));
+      record(deps, env.id, "put", `put ${file} → ${result.remotePath}`, {
+        stdout: "",
+        exitCode: 0,
+      });
+      return { service: svc.name, ...result, bytes: artifact.bytes };
     }
 
     default:

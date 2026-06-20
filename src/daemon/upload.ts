@@ -66,7 +66,9 @@ export function planUpload(opts: PlanUploadOpts): UploadPlan {
   return {
     chunkCount,
     appendCommands,
-    decodeCommand: `{ base64 -d ${tmp} > ${out} 2>/dev/null || base64 -D ${tmp} > ${out} ; }`,
+    // read the temp file from STDIN: macOS base64 rejects a positional file arg
+    // (needs -i/stdin); both GNU and BSD accept `base64 -d` reading stdin.
+    decodeCommand: `{ base64 -d < ${tmp} > ${out} 2>/dev/null || base64 -D < ${tmp} > ${out} ; }`,
     checksumCommand: `{ sha256sum ${out} 2>/dev/null || shasum -a 256 ${out} ; }`,
     cleanupCommand: `rm -f ${tmp}`,
   };

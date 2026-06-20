@@ -25,7 +25,7 @@ describe("planUpload (RFC-0003 slice 1)", () => {
   test("decode + checksum are GNU/BSD portable; paths shell-quoted", () => {
     const plan = planUpload({ base64: "AA==", remotePath: "/a b/x.jar", tmpPath: "/tmp/u" });
     expect(plan.decodeCommand).toBe(
-      "{ base64 -d '/tmp/u' > '/a b/x.jar' 2>/dev/null || base64 -D '/tmp/u' > '/a b/x.jar' ; }",
+      "{ base64 -d < '/tmp/u' > '/a b/x.jar' 2>/dev/null || base64 -D < '/tmp/u' > '/a b/x.jar' ; }",
     );
     expect(plan.checksumCommand).toBe(
       "{ sha256sum '/a b/x.jar' 2>/dev/null || shasum -a 256 '/a b/x.jar' ; }",

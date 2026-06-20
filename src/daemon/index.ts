@@ -20,6 +20,15 @@ export {
   type PlanUploadOpts,
 } from "./upload";
 export {
+  uploadArtifact,
+  backupIfExists,
+  backupPath,
+  uploadTmpPath,
+  doPut,
+  type SwapRun,
+  type PutResult,
+} from "./swap";
+export {
   EventBus,
   connectionChain,
   type WatchEvent,

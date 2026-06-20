@@ -15,7 +15,10 @@ export type RpcMethod =
   | "state"
   | "snapshot"
   | "exec"
-  | "watch";
+  | "watch"
+  | "put"
+  | "restart"
+  | "swap";
 
 export interface RpcRequest {
   id: number;
