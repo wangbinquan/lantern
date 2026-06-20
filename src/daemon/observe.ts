@@ -16,6 +16,9 @@ export interface ObserveOpts {
   className: string;
   method: string;
   count?: number;
+  /** Optional remote wall-clock bound: wrap with `timeout <N>` so a watch on an
+   *  uncalled method self-terminates instead of hanging (RFC-0004 §6). */
+  maxSeconds?: number;
 }
 
 export class ObserveError extends Error {
@@ -74,5 +77,22 @@ export function buildObserve(service: ServiceDescriptor, opts: ObserveOpts, pid:
   }
   arthasCmd += " ; stop"; // detach the agent after the bounded observation
 
-  return `java -jar ${shellQuote(jar)} ${pid} --batch-mode -c ${shellQuote(arthasCmd)}`;
+  const cmd = `java -jar ${shellQuote(jar)} ${pid} --batch-mode -c ${shellQuote(arthasCmd)}`;
+  const max = opts.maxSeconds;
+  // opt-in remote wall-clock bound; `timeout` is on the Linux env (not assumed on macOS tests)
+  return max !== undefined && Number.isFinite(max) && max > 0
+    ? `timeout ${Math.trunc(max)} ${cmd}`
+    : cmd;
+}
+
+/** Detach the Arthas agent from a JVM (cleanup for a stuck/abandoned observe). */
+export function buildObserveStop(service: ServiceDescriptor, pid: string): string {
+  if (!/^\d+$/.test(pid)) throw new ObserveError(`observe: invalid pid "${pid}"`);
+  const jar = service.diag?.arthasJar;
+  if (!jar) {
+    throw new ObserveError(
+      `service "${service.name}" has no diag.arthasJar (JVM observe needs Arthas)`,
+    );
+  }
+  return `java -jar ${shellQuote(jar)} ${pid} --batch-mode -c stop`;
 }

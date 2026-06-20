@@ -127,6 +127,33 @@ describe("parseCli", () => {
       "error",
     ); // no --method
   });
+
+  test("observe --stop and --max-seconds (RFC-0004 §6)", () => {
+    expect(parseCli(["observe", "--service", "x", "--stop"])).toEqual({
+      kind: "rpc",
+      method: "observe",
+      params: { service: "x", stop: true }, // op/class/method not required for --stop
+    });
+    expect(
+      parseCli([
+        "observe",
+        "--service",
+        "x",
+        "--op",
+        "trace",
+        "--class",
+        "C",
+        "--method",
+        "m",
+        "--max-seconds",
+        "60",
+      ]),
+    ).toEqual({
+      kind: "rpc",
+      method: "observe",
+      params: { service: "x", op: "trace", class: "C", method: "m", maxSeconds: 60 },
+    });
+  });
 });
 
 describe("unix socket round-trip (Daemon <-> rpc client)", () => {

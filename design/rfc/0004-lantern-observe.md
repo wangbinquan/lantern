@@ -68,8 +68,8 @@ Arthas 输出打到 stdout;`--class`/`--method`/`--op` 必填。
 
 - **挂起风险**:`watch/trace -n N` 会**阻塞直到该方法被调用 N 次**;若方法长期不被调用,会用满
   `--timeout`,且 Arthas agent 可能残留到 JVM 重启(批处理 `stop` 未及执行)。⇒ 建议只对**确实在被
-  调用**的方法用、给小 `-n`。远端 `timeout` 包裹 / `observe --stop` 清理留 **Phase 2**(`timeout` 在
-  macOS 测试不可移植,故 v1 不内置)。
+  调用**的方法用、给小 `-n`。**缓解(已实现)**:`--max-seconds N` 远端 `timeout` 包裹(opt-in,
+  `timeout` 在 Linux 环境;macOS 测试不内置默认),`observe --stop` 手动 detach 残留的 agent。
 - v1 限 JVM/Arthas。Python(`py-spy record` 写文件)、Go(`dlv trace` attach 会 pause)语义不同,留后续。
 
 ## 7. Testing
@@ -99,4 +99,6 @@ Arthas 输出打到 stdout;`--class`/`--method`/`--op` 必填。
   `unknown op` 拒绝)、**watch 可见**(observe 命令+exit 流进 watch 窗口)。假 jar 下 `java` 报
   `Invalid or corrupt jarfile`,符合预期。
 - **不自动放行**:observe 落 opencode `bash * → ask`(read-only allow 集未含 observe),逐条确认。
-- 挂起/detach 风险见 §6,v1 不内置远端 `timeout`(macOS 测试不可移植)。
+- **挂起/detach 缓解(后补)**:`observe --stop`(`-c stop` detach agent,无需 op/class/method)+
+  `--max-seconds N`(opt-in `timeout N` 远端包裹,自终止挂住的 watch/trace)。`--stop` 是关键:lantern
+  超时只杀 PTY、不卸载注入 JVM 的 Arthas agent,故需显式 stop。

@@ -33,7 +33,8 @@ tool. The hardened permission ruleset is in `.opencode/opencode.json`.
   Implemented today: `env list/use/current/init`, `logs`, `state`, `snapshot`, `exec`,
   `watch`, `put`, `restart`, `swap` (= backup→upload→restart→health→rollback; `--dry-run`
   previews), `observe` (intrusive read-only Arthas watch/trace/stack/tt — confirmed, not
-  auto-run; `lantern watch` shows internals for both swap and observe).
+  auto-run; `--max-seconds N` bounds it, `observe --stop` detaches a stuck agent; `lantern
+  watch` shows internals for both swap and observe).
 - **Confirm every mutation individually. Never select "always" on a mutating
   command** (it persists across restarts and widens blast radius). Reads may use
   "always".

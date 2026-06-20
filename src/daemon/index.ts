@@ -35,6 +35,7 @@ export {
 } from "./swap";
 export {
   buildObserve,
+  buildObserveStop,
   OBSERVE_OPS,
   ObserveError,
   type ObserveOp,

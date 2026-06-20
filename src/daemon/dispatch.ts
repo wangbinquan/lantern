@@ -10,7 +10,7 @@ import type { EnvDescriptor, ServiceDescriptor } from "../types";
 import type { AuditSink } from "./audit";
 import { buildLogs, buildSnapshot, buildState, locatePidCommand, type LogsFlags } from "./commands";
 import type { SessionPool } from "./pool";
-import { buildObserve, type ObserveOp } from "./observe";
+import { buildObserve, buildObserveStop, type ObserveOp } from "./observe";
 import { doPut, doRestart, doSwap, previewSwap, type SwapRun } from "./swap";
 import { readArtifact } from "./upload";
 import type { RpcRequest, RpcResponse } from "./protocol";
@@ -306,20 +306,32 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
     case "observe": {
       const env = resolveEnv(deps, p);
       const svc = resolveService(env, p);
-      const op = strOpt(p.op);
-      const className = strOpt(p.class);
-      const method = strOpt(p.method);
-      if (!op || !className || !method) throw new Error("observe needs --op, --class, --method");
       const timeoutMs = numOpt(p.timeoutMs);
       // Step 1: resolve a numeric PID (same as snapshot, no $()).
       const pidOut = await deps.pool.run(env.id, locatePidCommand(svc), timeoutMs);
       const pid = resolvePid(pidOut);
       if (!pid) throw new Error(`observe: could not resolve a PID for service "${svc.name}"`);
-      const command = buildObserve(
-        svc,
-        { op: op as ObserveOp, className, method, count: numOpt(p.count) },
-        pid,
-      );
+
+      let command: string;
+      if (p.stop === true) {
+        command = buildObserveStop(svc, pid); // detach a stuck Arthas agent
+      } else {
+        const op = strOpt(p.op);
+        const className = strOpt(p.class);
+        const method = strOpt(p.method);
+        if (!op || !className || !method) throw new Error("observe needs --op, --class, --method");
+        command = buildObserve(
+          svc,
+          {
+            op: op as ObserveOp,
+            className,
+            method,
+            count: numOpt(p.count),
+            maxSeconds: numOpt(p.maxSeconds),
+          },
+          pid,
+        );
+      }
       pubCommand(deps, env.id, "observe", command);
       const r = await deps.pool.run(env.id, command, timeoutMs);
       record(deps, env.id, "observe", command, r);

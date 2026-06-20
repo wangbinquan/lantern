@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildObserve,
+  buildObserveStop,
   dispatch,
   EventBus,
   ObserveError,
@@ -78,6 +79,31 @@ describe("buildObserve (RFC-0004 slice 1)", () => {
     expect(() =>
       buildObserve(svc(JAR), { op: "watch", className: "C", method: "m" }, "1; rm"),
     ).toThrow(/invalid pid/);
+  });
+
+  test("--max-seconds wraps with timeout; 0/NaN/undefined → no wrapper (RFC-0004 §6)", () => {
+    expect(
+      buildObserve(
+        svc(JAR),
+        { op: "trace", className: "C", method: "m", count: 3, maxSeconds: 30 },
+        "9",
+      ),
+    ).toBe(
+      "timeout 30 java -jar '/opt/arthas/arthas-boot.jar' 9 --batch-mode -c 'trace C m -n 3 ; stop'",
+    );
+    const noWrap = (maxSeconds?: number) =>
+      buildObserve(svc(JAR), { op: "trace", className: "C", method: "m", maxSeconds }, "9");
+    expect(noWrap(0).startsWith("java")).toBe(true);
+    expect(noWrap(Number.NaN).startsWith("java")).toBe(true);
+    expect(noWrap(undefined).startsWith("java")).toBe(true);
+  });
+
+  test("buildObserveStop detaches the agent", () => {
+    expect(buildObserveStop(svc(JAR), "1234")).toBe(
+      "java -jar '/opt/arthas/arthas-boot.jar' 1234 --batch-mode -c stop",
+    );
+    expect(() => buildObserveStop(svc(), "1")).toThrow(/arthasJar/);
+    expect(() => buildObserveStop(svc(JAR), "1; rm")).toThrow(/invalid pid/);
   });
 });
 
@@ -201,6 +227,38 @@ describe("observe dispatch (LOCAL_SHELL: pid resolve + command construction)", (
       );
       const cmd = events.find((e) => e.kind === "command" && e.method === "observe");
       expect(cmd).toBeDefined(); // pid resolved + command built despite the NaN timeout
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+    }
+  });
+
+  test("--stop builds the Arthas detach command (no op/class/method)", async () => {
+    const env: EnvDescriptor = {
+      id: "e",
+      form: "proprietary",
+      bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
+      services: [
+        { name: "svc", runtime: "jvm", locate: { pid: "echo 4242" }, diag: { arthasJar: JAR } },
+      ],
+    };
+    const registry = new Registry(":memory:");
+    registry.upsertEnv(env);
+    const bus = new EventBus();
+    const events: WatchEvent[] = [];
+    bus.subscribe((e) => events.push(e));
+    const pool = new SessionPool(registry, localFactory, {}, bus);
+    try {
+      await dispatch(
+        { registry, pool, bus },
+        {
+          id: 1,
+          method: "observe",
+          params: { envId: "e", service: "svc", stop: true },
+        },
+      );
+      const cmd = events.find((e) => e.kind === "command" && e.method === "observe");
+      expect(cmd?.kind === "command" && cmd.command).toContain("4242 --batch-mode -c stop");
     } finally {
       await pool.releaseAll();
       registry.close();

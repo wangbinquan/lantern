@@ -117,14 +117,21 @@ export function parseCli(argv: string[]): ParsedCli {
     const params: Record<string, unknown> = {};
     if (flags.env) params.envId = flags.env;
     if (flags.service) params.service = flags.service;
+    if (flags.timeout) params.timeoutMs = Number(flags.timeout);
+    if (!params.service) return err("usage: lantern observe --service <name> …");
+    if (flags.stop) {
+      // detach a stuck Arthas agent — op/class/method not needed
+      params.stop = true;
+      return { kind: "rpc", method: "observe", params };
+    }
     if (flags.op) params.op = flags.op;
     if (flags.class) params.class = flags.class;
     if (flags.method) params.method = flags.method;
     if (flags.count) params.count = Number(flags.count);
-    if (flags.timeout) params.timeoutMs = Number(flags.timeout);
-    if (!params.service || !params.op || !params.class || !params.method) {
+    if (flags["max-seconds"]) params.maxSeconds = Number(flags["max-seconds"]);
+    if (!params.op || !params.class || !params.method) {
       return err(
-        "usage: lantern observe --service <name> --op <watch|trace|stack|tt> --class <FQN> --method <m> [--count N]",
+        "usage: lantern observe --service <name> --op <watch|trace|stack|tt> --class <FQN> --method <m> [--count N] [--max-seconds N]   (or: --stop)",
       );
     }
     return { kind: "rpc", method: "observe", params };
@@ -182,7 +189,8 @@ Usage:
   lantern put     --service <name> --file <local> [--env <id>] [--chunk-size N]
   lantern restart --service <name> [--env <id>]
   lantern swap    --service <name> --file <local> [--dry-run] [--no-rollback] [--env <id>]
-  lantern observe --service <name> --op <watch|trace|stack|tt> --class <FQN> --method <m> [--count N] [--env <id>]
+  lantern observe --service <name> --op <watch|trace|stack|tt> --class <FQN> --method <m> [--count N] [--max-seconds N] [--env <id>]
+  lantern observe --service <name> --stop          # detach a stuck Arthas agent
 
 Read subcommands (env list/current, logs, state) are read-only by construction.
 put/restart/swap are MUTATING (each requires confirmation); swap = backup→upload→restart→health→rollback.
