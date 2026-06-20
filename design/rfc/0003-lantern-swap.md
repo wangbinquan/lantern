@@ -87,7 +87,9 @@ rm -f <tmp>
 
 ### 4.5 交付
 
-CLI:`lantern swap --service X --file <local> [--no-rollback] [--env id]`、`put`、`restart`。
+CLI:`lantern swap --service X --file <local> [--dry-run] [--no-rollback] [--env id]`、`put`、`restart`。
+**`--dry-run`**:只读本机文件算 sha256/大小、解析备份路径/restartCmd/healthCmd 并展示**将要做什么**,
+**不执行任何远端改动**(仍校验 swap 配置存在、healthCmd 只读,使预览可信)。
 lanternd 读**本机** `--file`(操作员机器上),base64 编码上传。RunResultPayload 扩展 swap 结果
 (`swapped`/`rolledBack`/`sha256`/`healthExit`)。分类器把 put/restart/swap 标记 mutating;
 opencode.json 对它们 `ask`(逐条确认);审计记录每步。
@@ -128,9 +130,10 @@ opencode.json 对它们 `ask`(逐条确认);审计记录每步。
 4. CLI(put/restart/swap)+ 分类器/权限/审计 + watch 事件接线。
 5. 文档(README/AGENTS、RFC→Implemented)+ LOCAL_SHELL 全链路 smoke。
 
-## 9. Unresolved questions
+## 9. Unresolved questions(已定稿)
 
+- **`--dry-run`**:做(预览将要做什么,不改远端)。
 - 上传分块大小:默认 **16 KB base64/块**(可在 swap 参数或描述符调)。
-- 是否暴露 `put`/`restart` 独立命令,还是只 `swap`?(本 RFC:都暴露,swap 为主线。)
+- `put`/`restart` 独立命令:都暴露,`swap` 为主线。
 - `env init` 是否问 swap 配置(remotePath/restartCmd/health)?v1 先让操作员在描述符里加;init 扩展留后续。
 - 大产物压缩(gzip→base64→远端 gunzip):jar 已压缩,收益小,暂不做。

@@ -12,6 +12,14 @@ export { dispatch, type DispatchDeps } from "./dispatch";
 export { fileAuditSink, type AuditEntry, type AuditSink } from "./audit";
 export { Daemon } from "./server";
 export {
+  planUpload,
+  readArtifact,
+  parseChecksum,
+  type Artifact,
+  type UploadPlan,
+  type PlanUploadOpts,
+} from "./upload";
+export {
   EventBus,
   connectionChain,
   type WatchEvent,
