@@ -114,6 +114,6 @@
 ## Low
 - **L1 `LANTERN_LOCAL_SHELL` 静默本机执行** — 🔧**已改**:启动打印醒目 DEV/DEMO 警告横幅。
 - **L2 fixture 不覆盖真实 PTY/host-key/超时** — 📝**记录**:Phase 2 加 localhost sshd 受控集成(host-key 不符、ECHO-on、超时、并发重连)。
-- **L3 未知尾随参数被静默忽略** — 📝**记录**:hand-rolled parser 对受控 agent 用法够用;后续可换严格 schema。
+- **L3 未知尾随参数被静默忽略** — 🔧**已改**:`logs/state/snapshot/exec` 现拒绝多余位置参数(`unexpected argument(s)`),拼写错误不再被静默吞掉。
 
 **Codex 确认无误**:registry SQL 参数化无注入;`sendSecret` 脱敏路径无明文泄漏;NDJSON happy-path 分帧正确。

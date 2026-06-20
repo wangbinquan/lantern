@@ -71,6 +71,14 @@ describe("parseCli", () => {
   test("unknown command is an error", () => {
     expect(parseCli(["frobnicate"]).kind).toBe("error");
   });
+
+  test("rejects unexpected positional args (Codex L3)", () => {
+    expect(parseCli(["logs", "--service", "svc", "extra"]).kind).toBe("error");
+    expect(parseCli(["state", "stray", "--service", "svc"]).kind).toBe("error");
+    // legitimate forms still parse
+    expect(parseCli(["logs", "--service", "svc"]).kind).toBe("rpc");
+    expect(parseCli(["exec", "--env", "E", "--", "echo", "hi"]).kind).toBe("rpc");
+  });
 });
 
 describe("unix socket round-trip (Daemon <-> rpc client)", () => {

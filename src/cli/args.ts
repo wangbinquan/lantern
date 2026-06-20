@@ -14,11 +14,14 @@ export type ParsedCli =
 interface ParsedFlags {
   flags: Record<string, string>;
   after: string[];
+  /** Stray positional tokens (before `--`) — rejected to catch typos (Codex L3). */
+  positional: string[];
 }
 
 function parseFlags(tokens: string[]): ParsedFlags {
   const flags: Record<string, string> = {};
   const after: string[] = [];
+  const positional: string[] = [];
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]!;
     if (t === "--") {
@@ -34,9 +37,11 @@ function parseFlags(tokens: string[]): ParsedFlags {
       } else {
         flags[key] = "true";
       }
+    } else {
+      positional.push(t);
     }
   }
-  return { flags, after };
+  return { flags, after, positional };
 }
 
 const err = (message: string): ParsedCli => ({ kind: "error", message });
@@ -61,7 +66,8 @@ export function parseCli(argv: string[]): ParsedCli {
   }
 
   if (cmd === "logs" || cmd === "state" || cmd === "snapshot" || cmd === "exec") {
-    const { flags, after } = parseFlags(rest);
+    const { flags, after, positional } = parseFlags(rest);
+    if (positional.length > 0) return err(`unexpected argument(s): ${positional.join(" ")}`);
     const params: Record<string, unknown> = {};
     if (flags.env) params.envId = flags.env;
     if (flags.service) params.service = flags.service;
