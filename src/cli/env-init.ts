@@ -96,9 +96,17 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
       log("  ✗ 无法自动获取(ssh-keyscan 不可用或主机无响应)");
     }
     if (!hostKeySha256) {
-      const manual = await ask(asker, "  手动粘贴 SHA256 指纹 (留空=不校验/insecure)");
-      if (manual) hostKeySha256 = manual;
-      else insecureHostKey = true;
+      const manual = await ask(asker, "  手动粘贴 SHA256 指纹 (留空进入 insecure 确认)");
+      if (manual) {
+        hostKeySha256 = manual;
+      } else if (await confirm(asker, "  ⚠ 不校验 host key 有 MITM 风险,确认 insecure?", false)) {
+        // require an explicit yes — never go insecure on a blank Enter (Codex H-1)
+        insecureHostKey = true;
+      } else {
+        throw new Error(
+          "host key not pinned — re-run with the fingerprint, or pass --insecure-host-key",
+        );
+      }
     }
   }
 

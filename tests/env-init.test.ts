@@ -247,4 +247,22 @@ describe("runEnvInit flow (RFC-0002 slice 4)", () => {
     expect(add.env.bastion.insecureHostKey).toBe(true);
     expect(add.env.bastion.hostKeySha256).toBeUndefined();
   });
+
+  test("scan failure + declined insecure → aborts, never silently insecure (H-1)", async () => {
+    // label, form, host, port, user, authKind, password, manual(blank), confirm-insecure(n)
+    const { deps } = captureDeps(["", "", "h", "", "ops", "", "pw", "", "n"], {
+      fetchFingerprint: () => null,
+    });
+    await expect(runEnvInit("e", {}, deps)).rejects.toThrow(/host key not pinned/);
+  });
+
+  test("scan failure + EXPLICIT insecure confirmation sets insecureHostKey (H-1)", async () => {
+    const { sent, deps } = captureDeps(["", "", "h", "", "ops", "", "pw", "", "y", "", "n", "n"], {
+      fetchFingerprint: () => null,
+    });
+    await runEnvInit("e", {}, deps);
+    const add = sent[0]!.params as unknown as AddParams;
+    expect(add.env.bastion.insecureHostKey).toBe(true);
+    expect(add.env.bastion.hostKeySha256).toBeUndefined();
+  });
 });
