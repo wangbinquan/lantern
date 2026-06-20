@@ -3,8 +3,7 @@
  * injected deps (asker / host-key fetch / RPC send / log) so it is testable
  * without a TTY or daemon; `runEnvInitCli` is the thin production wiring.
  */
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { registryDbPath } from "../paths";
 import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
 import type { EnvDescriptor, Runtime } from "../types";
 import {
@@ -191,12 +190,6 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
   if (firstSvc) {
     log(`  环境已就绪。opencode 经 MCP 的 exec 工具即可在 "${id}" 上执行命令。`);
   }
-}
-
-function registryDbPath(): string {
-  return process.env.LANTERN_HOME
-    ? join(process.env.LANTERN_HOME, "registry.db")
-    : join(homedir(), ".lantern", "registry.db");
 }
 
 /** Production wiring: real TTY asker + ssh-keyscan, writing the registry directly (no daemon). */

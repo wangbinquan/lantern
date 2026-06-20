@@ -21,6 +21,8 @@
 
 安全/可见性交给 MCP 客户端:**逐条 `exec` 确认** = opencode 的工具调用权限网关;**实时可见** = opencode TUI 显示每次工具调用 + 结果。Lantern 只保留一条**灾难命令兜底**(拒绝 `rm -rf` / `mkfs` / fork bomb 等)。密码全程在 OS 钥匙串,经 PTV 注入、从每个结果里脱敏。
 
+**旁观模式 `lantern monitor`**(RFC-0006):想要一个独立的"只读 ssh 窗口"?另开一个终端跑 `lantern monitor`,它跟读 server 的 `~/.lantern/exec.jsonl`,实时镜像环境上**已执行的每条命令 + 输出 + 退出码 + 拒绝**(无密码)。左边 opencode 对话+批,右边 monitor 旁观。
+
 ## 接入 opencode
 
 1. **配置环境(out-of-band,密钥不经模型)**——交互向导,隐藏输入直接进钥匙串、host key 经 `ssh-keyscan` 确认后 pin(TOFU):

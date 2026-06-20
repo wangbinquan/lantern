@@ -5,10 +5,10 @@
  * model. The MCP server (src/mcp/server.ts) reads these environments and exposes
  * `env_list` + `exec` to opencode.
  */
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { registryDbPath } from "../paths";
 import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
 import { runEnvInitCli } from "./env-init";
+import { runMonitor } from "./monitor";
 
 const HELP = `lantern — env-admin for the Lantern MCP server
 
@@ -17,15 +17,10 @@ const HELP = `lantern — env-admin for the Lantern MCP server
   lantern env use <id>
   lantern env current
   lantern env rm <id>
+  lantern monitor                                          # read-only spectator: live mirror of executed commands
 
 Registry: ~/.lantern/registry.db (or $LANTERN_HOME); secrets: OS keychain.
 The MCP server reads these and gives opencode the env_list + exec tools.`;
-
-function registryDbPath(): string {
-  return process.env.LANTERN_HOME
-    ? join(process.env.LANTERN_HOME, "registry.db")
-    : join(homedir(), ".lantern", "registry.db");
-}
 
 function openRegistry(): Registry {
   const useKeychain = process.env.LANTERN_LOCAL_SHELL !== "1" && keychainAvailable();
@@ -38,8 +33,14 @@ if (!cmd || cmd === "-h" || cmd === "--help" || cmd === "help") {
   process.stdout.write(HELP + "\n");
   process.exit(0);
 }
+if (cmd === "monitor") {
+  await runMonitor(); // read-only spectator; runs until Ctrl-C
+  process.exit(0);
+}
 if (cmd !== "env") {
-  process.stderr.write(`lantern: unknown command "${cmd}" (try: lantern env …)\n`);
+  process.stderr.write(
+    `lantern: unknown command "${cmd}" (try: lantern env … | lantern monitor)\n`,
+  );
   process.exit(2);
 }
 

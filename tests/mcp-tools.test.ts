@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { SessionPool } from "../src/session";
-import { envListTool, execTool, type McpDeps } from "../src/mcp/tools";
+import { envListTool, execTool, type ExecLogEntry, type McpDeps } from "../src/mcp/tools";
 import { spawnPty } from "../src/pty";
 import { Registry } from "../src/registry";
 import type { EnvDescriptor } from "../src/types";
@@ -74,6 +74,38 @@ describe("MCP tools (RFC-0005)", () => {
       expect(list.length).toBe(1);
       expect(list[0]?.id).toBe("e");
     } finally {
+      registry.close();
+    }
+  });
+
+  test("exec emits a spectator log entry (command + exit + stdout)", async () => {
+    const { deps, pool, registry } = setup();
+    const seen: ExecLogEntry[] = [];
+    deps.onExec = (e) => seen.push(e);
+    try {
+      await execTool(deps, { env: "e", command: "echo spectate" });
+      expect(seen.length).toBe(1);
+      expect(seen[0]?.command).toBe("echo spectate");
+      expect(seen[0]?.exitCode).toBe(0);
+      expect(seen[0]?.stdout).toBe("spectate");
+      expect(seen[0]?.refused).toBeUndefined();
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+    }
+  });
+
+  test("a refused command is logged as refused, not run", async () => {
+    const { deps, pool, registry } = setup();
+    const seen: ExecLogEntry[] = [];
+    deps.onExec = (e) => seen.push(e);
+    try {
+      await expect(execTool(deps, { env: "e", command: "rm -rf /" })).rejects.toThrow();
+      expect(seen.length).toBe(1);
+      expect(seen[0]?.refused).toContain("catastrophic");
+      expect(seen[0]?.exitCode).toBeNull();
+    } finally {
+      await pool.releaseAll();
       registry.close();
     }
   });

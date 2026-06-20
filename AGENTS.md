@@ -18,6 +18,9 @@ logs, diagnosing, deploying) are **your own skills**, composed from `exec` calls
    ```
 3. opencode now has `env_list` + `exec`. It shows every tool call + result, and
    prompts for confirmation per call — that IS the human-in-the-loop boundary.
+4. (Optional) For a dedicated read-only spectator window, open a second terminal and
+   run `bun src/cli/lantern.ts monitor` — a live mirror of every executed/refused
+   command on the environment (RFC-0006), separate from the chat.
 
 ## Rules for the agent
 - **Run commands on the environment via `exec`** (`{env, command, timeoutMs?}`).

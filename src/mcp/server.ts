@@ -7,9 +7,9 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { appendFileSync } from "node:fs";
 import { z } from "zod";
+import { execLogPath, registryDbPath } from "../paths";
 import { SessionPool } from "../session";
 import { spawnPty } from "../pty";
 import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
@@ -17,16 +17,25 @@ import { VERSION } from "../version";
 import { envListTool, execTool, type McpDeps } from "./tools";
 
 const localShell = process.env.LANTERN_LOCAL_SHELL === "1";
-const dbPath = process.env.LANTERN_HOME
-  ? join(process.env.LANTERN_HOME, "registry.db")
-  : join(homedir(), ".lantern", "registry.db");
+const dbPath = registryDbPath();
 const useKeychain = !localShell && keychainAvailable();
 
 const registry = new Registry(dbPath, useKeychain ? new KeychainSecretStore() : undefined);
 const pool = localShell
   ? new SessionPool(registry, () => () => spawnPty(["bash", "--norc", "--noprofile"]))
   : new SessionPool(registry);
-const deps: McpDeps = { registry, pool };
+const deps: McpDeps = {
+  registry,
+  pool,
+  // append-only spectator log; `lantern monitor` tails it (best-effort — never break exec)
+  onExec: (e) => {
+    try {
+      appendFileSync(execLogPath(), JSON.stringify(e) + "\n");
+    } catch {
+      /* spectator log is non-critical */
+    }
+  },
+};
 
 const server = new McpServer({ name: "lantern", version: VERSION });
 
