@@ -1,0 +1,8 @@
+# Normalize all text to LF in the repo AND the working tree on every platform.
+# Without this, GitHub's Windows runner checks out CRLF (core.autocrlf=true), which
+# fails Prettier's format:check and would corrupt the PTY marker protocol.
+* text=auto eol=lf
+
+# Shell fixtures must stay LF (they're run by bash on the remote/local target).
+*.sh text eol=lf
+tests/fixtures/bin/* text eol=lf
