@@ -32,7 +32,10 @@ re-add business features.
 - Scripts: `bun run typecheck` (tsc --noEmit), `bun run lint` (oxlint),
   `bun run format` / `format:check` (prettier), `bun test`.
 - **Pre-push:** run `bun run typecheck && bun run lint && bun run format:check && bun test`
-  (mirrors CI's `check` job). CI also runs lychee link-check + actionlint + gitleaks.
+  (mirrors CI's `check` job, now Linux+macOS+Windows). CI also runs lychee link-check
+  + actionlint + gitleaks.
+- **Releasing:** bump `package.json` + `src/version.ts`, update `CHANGELOG.md`, then tag
+  `vX.Y.Z` → `release.yml` cross-compiles + publishes binaries. Full steps in `RELEASING.md`.
 
 ## Layout (target — minimal MCP server)
 ```
