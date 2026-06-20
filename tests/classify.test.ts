@@ -144,3 +144,51 @@ describe("helpers", () => {
     expect(stripWrappers("nice -n 10 nohup tail -f log")).toBe("tail -f log");
   });
 });
+
+describe("hardening (Codex review H3/H4/H5)", () => {
+  test("split/long-flag rm -rf are catastrophic deny", () => {
+    expect(v("rm -r -f /tmp/x")).toBe("deny");
+    expect(v("rm --recursive --force /tmp/x")).toBe("deny");
+    expect(v("rm -fr /tmp/x")).toBe("deny");
+    expect(v("ls && rm -r -f /tmp/x")).toBe("deny");
+  });
+  test("rm without both recursive+force is mutate, not deny", () => {
+    expect(v("rm -r /tmp/x")).toBe("mutate");
+    expect(v("rm file")).toBe("mutate");
+  });
+  test("nested docker/git subcommands are not read", () => {
+    expect(v("docker image rm alpine")).toBe("mutate");
+    expect(v("docker image prune -a")).toBe("mutate");
+    expect(v("git config user.name pwned")).toBe("mutate");
+    expect(v("git branch newbranch")).toBe("mutate");
+    expect(v("git remote add x url")).toBe("mutate");
+    expect(v("git tag v1")).toBe("mutate");
+  });
+  test("docker/git reads still read", () => {
+    expect(v("docker ps -a")).toBe("read");
+    expect(v("docker images")).toBe("read");
+    expect(v("git status")).toBe("read");
+    expect(v("git log --oneline")).toBe("read");
+  });
+  test("JVM attach write tools are not read", () => {
+    expect(v("jmap -dump:format=b,file=/tmp/heap.hprof 1234")).toBe("mutate");
+    expect(v("jinfo -flag +PrintGC 1234")).toBe("mutate");
+  });
+  test("jstack/jps/pgrep/pidof remain read", () => {
+    expect(v("jstack 1234")).toBe("read");
+    expect(v("jps -l")).toBe("read");
+    expect(v("pgrep -f order-svc.jar")).toBe("read");
+    expect(v("pidof java")).toBe("read");
+  });
+  test("sed write modes are not read", () => {
+    expect(v("sed --in-place s/a/b/ f")).toBe("mutate");
+    expect(v("sed -i s/a/b/ f")).toBe("mutate");
+    expect(v("sed -n 'w /tmp/out' f")).toBe("mutate");
+    expect(v("sed -n '1,5p' f")).toBe("read");
+  });
+  test("find file-writing primaries are not read", () => {
+    expect(v("find . -fprint0 /tmp/list")).toBe("mutate");
+    expect(v("find . -fprintf /tmp/o '%p'")).toBe("mutate");
+    expect(v("find . -name '*.log'")).toBe("read");
+  });
+});

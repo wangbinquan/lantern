@@ -1,9 +1,9 @@
 /**
  * Read-only vs mutating command classifier — lanternd's defense-in-depth layer
  * (design.md §6 "第 2 层"). Applied to the free-form remote command that the
- * agent supplies to `lantern exec --cmd`. The auto-allowed read subcommands
- * (`logs`/`state`/`snapshot`) do NOT go through this — they are read-only by
- * construction (fixed templates).
+ * agent supplies to `lantern exec --cmd`, and to lanternd's own generated read
+ * commands (fail-closed). Auto-allowed read subcommands build commands from
+ * templates; this is the backstop.
  *
  * Approach mirrors Claude Code's classifier (design.md §4 借鉴):
  *  - split a compound command on shell operators; EVERY segment must be read-only
@@ -40,9 +40,8 @@ export interface ClassifyOptions {
   proprietaryReadOnly?: ProprietaryReadOnly[];
 }
 
-/** Catastrophic patterns — hard `deny` regardless of anything else. */
+/** Catastrophic regex patterns — hard `deny` (rm is handled by hasCatastrophicRm). */
 const CATASTROPHIC: { re: RegExp; reason: string }[] = [
-  { re: /\brm\s+-[a-z]*r[a-z]*f|\brm\s+-[a-z]*f[a-z]*r/i, reason: "rm -rf" },
   { re: /\bmkfs(\.\w+)?\b/i, reason: "filesystem format (mkfs)" },
   { re: /\bdd\b[^|;&]*\bof=\/dev\/(sd|nvme|disk|hd)/i, reason: "dd to a raw block device" },
   { re: /:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, reason: "fork bomb" },
@@ -52,10 +51,31 @@ const CATASTROPHIC: { re: RegExp; reason: string }[] = [
   { re: /\bchmod\s+-R\s+0*0{3}\s+\//i, reason: "chmod -R 000 /" },
 ];
 
+/**
+ * `rm` with BOTH a recursive form (-r/-R/--recursive, incl. split/combined short
+ * flags) AND a force form (-f/--force). Catches `rm -rf`, `rm -fr`, `rm -r -f`,
+ * and `rm --recursive --force` (the regex-only approach missed the latter two).
+ */
+function hasCatastrophicRm(cmd: string): boolean {
+  const re = /\brm\b([^;&|]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(cmd)) !== null) {
+    const args = m[1]!;
+    const recursive = /(^|\s)-[a-zA-Z]*[rR]|(^|\s)--recursive\b/.test(args);
+    const force = /(^|\s)-[a-zA-Z]*f|(^|\s)--force\b/.test(args);
+    if (recursive && force) return true;
+  }
+  return false;
+}
+
 /** Safe leading wrappers that can be stripped without changing read/write nature. */
 const SAFE_WRAPPERS = new Set(["timeout", "nice", "nohup", "stdbuf", "time", "ionice", "chrt"]);
 
-/** Binaries that are read-only no matter the arguments (no in-place/write flags). */
+/**
+ * Binaries that are read-only no matter the arguments. NOTE: JVM attach tools
+ * jmap/jinfo/jcmd are deliberately NOT here — they can write heap dumps and
+ * change live JVM flags (so they fall to ask). jstack/jps are pure dumps.
+ */
 const READONLY_BINARIES = new Set([
   "ls",
   "cat",
@@ -78,6 +98,8 @@ const READONLY_BINARIES = new Set([
   "uptime",
   "free",
   "ps",
+  "pgrep",
+  "pidof",
   "env",
   "printenv",
   "grep",
@@ -125,21 +147,18 @@ const READONLY_BINARIES = new Set([
   "journalctl",
   "dmesg",
   "jstack",
-  "jmap",
   "jps",
-  "jinfo",
 ]);
 
 /** Binaries whose recognized verb decides read-only-ness. */
 const SUBCOMMAND_READONLY: Record<string, Set<string>> = {
+  // branch/tag/config/remote removed — they have write modes (`git branch <n>`,
+  // `git config k v`, `git remote add`); they fall to ask.
   git: new Set([
     "status",
     "log",
     "diff",
     "show",
-    "branch",
-    "tag",
-    "remote",
     "rev-parse",
     "describe",
     "blame",
@@ -148,7 +167,6 @@ const SUBCOMMAND_READONLY: Record<string, Set<string>> = {
     "ls-tree",
     "shortlog",
     "reflog",
-    "config",
     "whatchanged",
   ]),
   kubectl: new Set([
@@ -166,10 +184,11 @@ const SUBCOMMAND_READONLY: Record<string, Set<string>> = {
     "auth",
   ]),
   helm: new Set(["list", "ls", "status", "get", "history", "show", "search", "version", "env"]),
+  // "image" removed — it is the management subcommand GROUP (`docker image rm/prune`),
+  // not a read; the list command is the plural "images".
   docker: new Set([
     "ps",
     "images",
-    "image",
     "inspect",
     "logs",
     "top",
@@ -183,7 +202,6 @@ const SUBCOMMAND_READONLY: Record<string, Set<string>> = {
   podman: new Set([
     "ps",
     "images",
-    "image",
     "inspect",
     "logs",
     "top",
@@ -204,9 +222,6 @@ const SUBCOMMAND_READONLY: Record<string, Set<string>> = {
     "cat",
     "get-default",
   ]),
-  // Arthas read-only batch commands. The invasive ones (watch/trace/tt/monitor/
-  // stack/profiler) and the mutating ones (redefine/ognl/…) are NOT here — they
-  // route through `lantern observe`/`redefine` (ask), not a read path.
   arthas: new Set([
     "dashboard",
     "thread",
@@ -346,7 +361,6 @@ export function stripWrappers(segment: string): string {
 function hasDangerousShell(cmd: string): { bad: boolean; reason: string } {
   if (/\$\(/.test(cmd) || /`/.test(cmd)) return { bad: true, reason: "command substitution" };
   if (/<\(|>\(/.test(cmd)) return { bad: true, reason: "process substitution" };
-  // write redirection to a real file (allow 2>/dev/null, >/dev/null, >&N, 2>&1)
   if (/(^|\s)\d*>>?\s*(?!&|\/dev\/null\b)\S/.test(cmd))
     return { bad: true, reason: "write redirection" };
   if (/&>/.test(cmd) && !/&>\s*\/dev\/null\b/.test(cmd))
@@ -400,14 +414,19 @@ function classifySegment(segment: string, opts: ClassifyOptions): ClassifyResult
 
   // binaries that are read-only only without their write flags
   if (head === "find") {
-    return /(^|\s)-(exec|execdir|delete|ok|okdir|fprintf?|fls|fprint)\b/.test(segment)
-      ? { verdict: "mutate", reason: "find -exec/-delete" }
+    // prefix match so -fprint0/-fprintf/-execdir/-okdir are all caught
+    return /(^|\s)-(exec|delete|ok|fls|fprint)/.test(segment)
+      ? { verdict: "mutate", reason: "find -exec/-delete/-fprint" }
       : { verdict: "read", reason: "find (read-only)" };
   }
   if (head === "sed") {
-    return /(^|\s)-[a-z]*i/.test(segment)
-      ? { verdict: "mutate", reason: "sed -i writes in place" }
-      : { verdict: "read", reason: "sed (no -i)" };
+    if (/(^|\s)--in-place\b/.test(segment) || /(^|\s)-[a-z]*i/.test(segment)) {
+      return { verdict: "mutate", reason: "sed -i/--in-place writes" };
+    }
+    if (/['"; ]w[ \t]+\S/.test(segment) || /\/w(\b|[ ;'"])/.test(segment)) {
+      return { verdict: "mutate", reason: "sed w write-directive" };
+    }
+    return { verdict: "read", reason: "sed (no write)" };
   }
   if (head === "sort") {
     return /(^|\s)(-o\b|--output)/.test(segment)
@@ -426,6 +445,7 @@ export function classifyCommand(cmd: string, opts: ClassifyOptions = {}): Classi
   const trimmed = cmd.trim();
   if (trimmed.length === 0) return { verdict: "mutate", reason: "empty command" };
 
+  if (hasCatastrophicRm(trimmed)) return { verdict: "deny", reason: "rm -rf (recursive+force)" };
   for (const c of CATASTROPHIC) {
     if (c.re.test(trimmed)) return { verdict: "deny", reason: c.reason };
   }
