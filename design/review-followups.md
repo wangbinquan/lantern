@@ -117,3 +117,24 @@
 - **L3 未知尾随参数被静默忽略** — 🔧**已改**:`logs/state/snapshot/exec` 现拒绝多余位置参数(`unexpected argument(s)`),拼写错误不再被静默吞掉。
 
 **Codex 确认无误**:registry SQL 参数化无注入;`sendSecret` 脱敏路径无明文泄漏;NDJSON happy-path 分帧正确。
+
+---
+
+# Codex 评审跟进 (2026-06-20,RFC-0001..0004 新代码 + 修复二轮)
+
+对 watch/env-init/swap/observe 四个 RFC 新代码做了一轮 Codex 对抗审视,8 条发现全部修复并加测试:
+C-1(piped 密码回显)、H-1(host-key 静默 insecure)、H-2(无空格重定向绕过只读)、H-3(上传非原子)、
+H-4(swap 忽略 restart/rollback 退出码)、M-1(swap 内部命令可见性)、M-2(watch 无反压)、M-3(噪声 PID)。
+
+**二轮 diff review**(确认修复 + 找回归):原 8 条 7 RESOLVED + M-1 PARTIAL(接受);新发现 4 条:
+
+- 🔧**HIGH 并发 swap 共享 staging 路径(TOCTOU)** — 两个同服务并发 swap 共用确定性 `remotePath.lantern.new`,
+  checksum 与 mv 之间可被另一 swap 改写 → 装错/损坏。**已改**:staging 改为**每次上传唯一**
+  (`remotePath.lantern.<rand>.new`,后缀可注入测试),消除 TOCTOU/复用;并发降为良性"后 mv 者胜"(各装自己已校验的产物)。
+- 🔧**MEDIUM stale staging 复用** — 同根因;唯一 staging 一并解决(清理失败只留一个不会被复用的孤儿文件)。
+- 🔧**LOW `--timeout abc`→NaN 绕过 L-1** — `numOpt` 对 NaN 透传 → 超时被禁用/立即失败。**已改**:
+  `numOpt` 用 `Number.isFinite` 拒 NaN(单一收口,覆盖 timeout/count/chunk-size,完成 L-1)。
+- 📝**LOW H-2 正则非引号感知** — `grep ">" f` 误判 mutate。**接受**:fail-safe 方向(read→ask/拒),
+  引号感知解析对分类器过脆;含引号 `>` 的 healthCmd 可改写。记录。
+- 📝**M-1 PARTIAL** — `put` 仍只发 summary、swap 的 backup/upload 不发逐条 raw 命令。**接受**:
+  per-chunk 不发是防刷屏;swap 已发 cp/mv/restart/health/rollback 关键命令。put 细化留后续。

@@ -166,4 +166,44 @@ describe("observe dispatch (LOCAL_SHELL: pid resolve + command construction)", (
       registry.close();
     }
   });
+
+  test("a NaN --timeout falls back to the default and still runs (numOpt L-1 follow-up)", async () => {
+    const env: EnvDescriptor = {
+      id: "e",
+      form: "proprietary",
+      bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
+      services: [
+        { name: "svc", runtime: "jvm", locate: { pid: "echo 4242" }, diag: { arthasJar: JAR } },
+      ],
+    };
+    const registry = new Registry(":memory:");
+    registry.upsertEnv(env);
+    const bus = new EventBus();
+    const events: WatchEvent[] = [];
+    bus.subscribe((e) => events.push(e));
+    const pool = new SessionPool(registry, localFactory, {}, bus);
+    try {
+      // a NaN timeout would immediately fail the locate run if numOpt didn't reject it
+      await dispatch(
+        { registry, pool, bus },
+        {
+          id: 1,
+          method: "observe",
+          params: {
+            envId: "e",
+            service: "svc",
+            op: "trace",
+            class: "C",
+            method: "m",
+            timeoutMs: Number.NaN,
+          },
+        },
+      );
+      const cmd = events.find((e) => e.kind === "command" && e.method === "observe");
+      expect(cmd).toBeDefined(); // pid resolved + command built despite the NaN timeout
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+    }
+  });
 });

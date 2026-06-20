@@ -79,11 +79,11 @@ describe("uploadArtifact (RFC-0003 slice 2)", () => {
       }
       return Promise.resolve({ stdout: "", exitCode: 0 });
     };
-    await expect(uploadArtifact(run, art, "/app/x.jar", { tmpPath: "/t" })).rejects.toThrow(
-      /mismatch/,
-    );
+    await expect(
+      uploadArtifact(run, art, "/app/x.jar", { tmpPath: "/t", stagingSuffix: "test" }),
+    ).rejects.toThrow(/mismatch/);
     expect(cmds.some((c) => c.startsWith("mv "))).toBe(false); // live path untouched
-    expect(cmds.some((c) => c.includes("rm -f '/app/x.jar.lantern.new'"))).toBe(true); // staging cleaned
+    expect(cmds.some((c) => c.includes("rm -f '/app/x.jar.lantern.test.new'"))).toBe(true); // staging cleaned
   });
 
   test("a verified upload moves staging → remotePath (H-3)", async () => {
@@ -95,8 +95,23 @@ describe("uploadArtifact (RFC-0003 slice 2)", () => {
       }
       return Promise.resolve({ stdout: "", exitCode: 0 });
     };
-    await uploadArtifact(run, art, "/app/x.jar", { tmpPath: "/t" });
-    expect(cmds).toContain("mv '/app/x.jar.lantern.new' '/app/x.jar'");
+    await uploadArtifact(run, art, "/app/x.jar", { tmpPath: "/t", stagingSuffix: "test" });
+    expect(cmds).toContain("mv '/app/x.jar.lantern.test.new' '/app/x.jar'");
+  });
+
+  test("uses a UNIQUE staging path per upload (concurrent-safe)", async () => {
+    const paths = new Set<string>();
+    const recordingRun = (): SwapRun => (cmd) => {
+      const m = /^mv '([^']+)'/.exec(cmd);
+      if (m) paths.add(m[1]!);
+      if (cmd.includes("sha256sum") || cmd.includes("shasum")) {
+        return Promise.resolve({ stdout: `${art.sha256}  /x\n`, exitCode: 0 });
+      }
+      return Promise.resolve({ stdout: "", exitCode: 0 });
+    };
+    await uploadArtifact(recordingRun(), art, "/app/x.jar", { tmpPath: "/t" });
+    await uploadArtifact(recordingRun(), art, "/app/x.jar", { tmpPath: "/t" });
+    expect(paths.size).toBe(2); // distinct staging paths → no clobber between swaps
   });
 });
 

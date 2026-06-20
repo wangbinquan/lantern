@@ -37,7 +37,9 @@ function strOpt(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 function numOpt(v: unknown): number | undefined {
-  return typeof v === "number" ? v : undefined;
+  // reject NaN so a bad --timeout/--count/--chunk-size falls back to the default
+  // rather than disabling a timeout or emitting a broken command (Codex L-1 follow-up).
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
 /**

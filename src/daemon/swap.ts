@@ -4,6 +4,7 @@
  * swap (slice 3) chains put → restart → health → rollback. All steps run through
  * a `SwapRun` (the pool's per-env runner), injectable for tests.
  */
+import { randomBytes } from "node:crypto";
 import { classifyCommand } from "../classify";
 import type { RunResult } from "../ssh";
 import type { ServiceDescriptor } from "../types";
@@ -31,9 +32,12 @@ export async function uploadArtifact(
   run: SwapRun,
   artifact: Artifact,
   remotePath: string,
-  opts: { tmpPath: string; chunkSize?: number },
+  opts: { tmpPath: string; chunkSize?: number; stagingSuffix?: string },
 ): Promise<string> {
-  const staging = `${remotePath}.lantern.new`;
+  // UNIQUE staging path per upload so concurrent swaps of the same service can't
+  // share/clobber it (no checksum↔mv TOCTOU, no stale-staging reuse).
+  const suffix = opts.stagingSuffix ?? randomBytes(6).toString("hex");
+  const staging = `${remotePath}.lantern.${suffix}.new`;
   const stagingQ = shellQuote(staging);
   const discardStaging = async (): Promise<void> => {
     try {
