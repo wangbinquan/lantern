@@ -3,9 +3,10 @@
  * injected deps (asker / host-key fetch / RPC send / log) so it is testable
  * without a TTY or daemon; `runEnvInitCli` is the thin production wiring.
  */
-import { defaultSocketPath, type RpcMethod } from "../daemon";
-import type { Runtime } from "../types";
-import { rpc } from "./client";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
+import type { EnvDescriptor, Runtime } from "../types";
 import {
   buildEnvInitPlan,
   type AuthAnswer,
@@ -25,8 +26,9 @@ export interface EnvInitOpts {
 export interface EnvInitDeps {
   asker: Asker;
   fetchFingerprint: (host: string, port: number) => HostKeyResult | null;
+  /** Persist the assembled env / select it. Production writes the registry directly. */
   send: (
-    method: Extract<RpcMethod, "env.add" | "env.use">,
+    method: "env.add" | "env.use",
     params: Record<string, unknown>,
   ) => Promise<{ ok: boolean; error?: string }>;
   log: (msg: string) => void;
@@ -187,28 +189,43 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
   );
   const firstSvc = services[0]?.name;
   if (firstSvc) {
-    log(`  试试:lantern logs --service ${firstSvc} --grep ERROR   (另开 \`lantern watch\` 看实时)`);
+    log(`  环境已就绪。opencode 经 MCP 的 exec 工具即可在 "${id}" 上执行命令。`);
   }
 }
 
-/** Production wiring: real TTY asker + ssh-keyscan + RPC. */
-export async function runEnvInitCli(
-  id: string,
-  opts: EnvInitOpts,
-  token: string | undefined,
-): Promise<void> {
+function registryDbPath(): string {
+  return process.env.LANTERN_HOME
+    ? join(process.env.LANTERN_HOME, "registry.db")
+    : join(homedir(), ".lantern", "registry.db");
+}
+
+/** Production wiring: real TTY asker + ssh-keyscan, writing the registry directly (no daemon). */
+export async function runEnvInitCli(id: string, opts: EnvInitOpts): Promise<void> {
+  const useKeychain = process.env.LANTERN_LOCAL_SHELL !== "1" && keychainAvailable();
+  const registry = new Registry(
+    registryDbPath(),
+    useKeychain ? new KeychainSecretStore() : undefined,
+  );
   const tty = makeTtyAsker();
   try {
     await runEnvInit(id, opts, {
       asker: tty.ask,
       fetchFingerprint: (h, p) => fetchHostKeyFingerprint(h, p),
-      send: async (method, params) => {
-        const resp = await rpc(defaultSocketPath(), { id: 1, method, params, token }, 120_000);
-        return resp.ok ? { ok: true } : { ok: false, error: resp.error };
+      send: (method, params) => {
+        if (method === "env.add") {
+          registry.upsertEnv(params.env as EnvDescriptor);
+          const secrets = params.secrets as Record<string, string> | undefined;
+          if (secrets)
+            for (const [ref, val] of Object.entries(secrets)) registry.setSecret(ref, val);
+        } else {
+          registry.setCurrent(params.id as string);
+        }
+        return Promise.resolve({ ok: true });
       },
       log: (m) => process.stderr.write(m + "\n"),
     });
   } finally {
     tty.close();
+    registry.close();
   }
 }

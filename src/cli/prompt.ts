@@ -18,9 +18,10 @@ export interface AskOpts {
   validate?: (value: string) => string | null;
 }
 
-/** Ask once, applying default + validation, retrying until valid. */
+/** Ask once, applying default + validation, retrying until valid (bounded). */
 export async function ask(asker: Asker, question: string, opts: AskOpts = {}): Promise<string> {
-  for (;;) {
+  // bounded so exhausted piped input (asker returns "" forever) can't infinite-loop
+  for (let attempt = 0; attempt < 100; attempt++) {
     const suffix = opts.default !== undefined ? ` (${opts.default})` : "";
     const raw = (await asker(`${question}${suffix}: `, { secret: opts.secret })).trim();
     const value = raw.length === 0 && opts.default !== undefined ? opts.default : raw;
@@ -31,6 +32,7 @@ export async function ask(asker: Asker, question: string, opts: AskOpts = {}): P
     }
     return value;
   }
+  throw new Error(`too many invalid attempts for prompt: ${question}`);
 }
 
 /** Yes/no with a default. */

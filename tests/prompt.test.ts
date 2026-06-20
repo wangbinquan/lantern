@@ -17,6 +17,12 @@ describe("ask (RFC-0002 slice 3)", () => {
     const a = await ask(scripted(["bad host!", "good-host"]), "Host", { validate: v.host });
     expect(a).toBe("good-host");
   });
+  test("throws (not infinite-loops) when exhausted input keeps failing validation", async () => {
+    const always = (): Promise<string> => Promise.resolve(""); // exhausted pipe → "" forever
+    await expect(ask(always, "PID command", { validate: v.nonEmpty })).rejects.toThrow(
+      /too many invalid attempts/,
+    );
+  });
 });
 
 describe("confirm", () => {

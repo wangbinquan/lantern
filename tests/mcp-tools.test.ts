@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SessionPool } from "../src/daemon";
+import { SessionPool } from "../src/session";
 import { envListTool, execTool, type McpDeps } from "../src/mcp/tools";
 import { spawnPty } from "../src/pty";
 import { Registry } from "../src/registry";

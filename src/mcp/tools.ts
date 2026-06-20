@@ -4,7 +4,7 @@
  * Lantern's whole surface: list environments, and run a command on one over its
  * multi-hop/su SSH session.
  */
-import type { SessionPool } from "../daemon/pool";
+import type { SessionPool } from "../session";
 import type { Registry } from "../registry";
 import { catastrophicReason } from "../safety/catastrophic";
 

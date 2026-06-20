@@ -10,7 +10,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { SessionPool } from "../daemon/pool";
+import { SessionPool } from "../session";
 import { spawnPty } from "../pty";
 import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
 import { VERSION } from "../version";

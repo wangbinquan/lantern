@@ -1,18 +1,16 @@
 /**
- * Session pool (design.md §4.4): one SessionManager per env.id, single-owner.
- * The factory is injectable so tests use spawnPty + fixtures while production
- * uses the ssh2 bastion factory.
+ * Session pool: one persistent SessionManager per env.id, single-owner. The
+ * factory is injectable so tests use spawnPty + fixtures while production uses
+ * the ssh2 bastion factory. Backs the MCP `exec` tool (RFC-0005).
  */
 import type { Registry } from "../registry";
 import {
   makeBastionFactory,
   SessionManager,
-  type SessionEvent,
   type SessionOptions,
   type TransportFactory,
 } from "../ssh";
 import type { EnvDescriptor } from "../types";
-import { connectionChain, type EventBus } from "./watch";
 
 export type FactoryMaker = (env: EnvDescriptor) => TransportFactory;
 
@@ -24,36 +22,9 @@ export class SessionPool {
     private readonly registry: Registry,
     makeFactory?: FactoryMaker,
     private readonly sessionOpts: Partial<SessionOptions> = {},
-    private readonly bus?: EventBus,
   ) {
     this.makeFactory =
       makeFactory ?? ((env) => makeBastionFactory(env, this.registry.resolveSecret));
-  }
-
-  /** Map a SessionManager event onto the watch bus, tagged with envId (RFC-0001 §4.4). */
-  private forward(env: string, chain: string[], e: SessionEvent): void {
-    const bus = this.bus;
-    if (!bus) return;
-    const ts = Date.now();
-    switch (e.kind) {
-      case "ready":
-        bus.publish({ ts, env, kind: "connect", chain });
-        break;
-      case "stdout":
-        bus.publish({ ts, env, kind: "stdout", text: e.text });
-        break;
-      case "step":
-        bus.publish({ ts, env, kind: "step", text: e.text });
-        break;
-      case "error":
-        bus.publish({ ts, env, kind: "error", text: e.text });
-        break;
-      case "write":
-        // raw command writes are covered by dispatch's "command"; surface only
-        // the (already-redacted) password sends so the operator sees them.
-        if (e.text === "***") bus.publish({ ts, env, kind: "step", text: "sent password ***" });
-        break;
-    }
   }
 
   get(envId: string): SessionManager {
@@ -61,17 +32,10 @@ export class SessionPool {
     if (existing) return existing;
     const env = this.registry.getEnv(envId);
     if (!env) throw new Error(`unknown environment "${envId}"`);
-    const opts: SessionOptions = {
+    const session = new SessionManager(this.makeFactory(env), env, {
       resolveSecret: this.registry.resolveSecret,
       ...this.sessionOpts,
-    };
-    const chain = connectionChain(env);
-    const userOnEvent = opts.onEvent;
-    opts.onEvent = (e) => {
-      userOnEvent?.(e);
-      this.forward(envId, chain, e);
-    };
-    const session = new SessionManager(this.makeFactory(env), env, opts);
+    });
     this.sessions.set(envId, session);
     return session;
   }
