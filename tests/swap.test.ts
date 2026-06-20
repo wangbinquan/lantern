@@ -7,10 +7,12 @@ import {
   type Artifact,
   dispatch,
   type DispatchDeps,
+  EventBus,
   previewSwap,
   SessionPool,
   type SwapRun,
   uploadArtifact,
+  type WatchEvent,
 } from "../src/daemon";
 import type { ServiceDescriptor, SwapRecipe } from "../src/types";
 import { spawnPty } from "../src/pty";
@@ -331,6 +333,42 @@ describe("swap + restart orchestration (LOCAL_SHELL integration)", () => {
       expect(res?.rolledBack).toBe(false); // rollback's restart also failed
       expect(res?.rollbackError).toContain("bad state");
       expect(readFileSync(remotePath)).toEqual(Buffer.from("OLD")); // cp still restored the artifact
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("swap publishes the actual backup/upload/restart commands to the watch bus (M-1)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lantern-swapm1-"));
+    const artifactPath = join(dir, "art.bin");
+    const remotePath = join(dir, "deployed.bin");
+    writeFileSync(artifactPath, Buffer.from("PAYLOAD"));
+    const registry = new Registry(":memory:");
+    registry.upsertEnv(
+      envSwap({ mode: "manual", remotePath, restartCmd: "echo r", healthCmd: "true" }),
+    );
+    const bus = new EventBus();
+    const events: WatchEvent[] = [];
+    bus.subscribe((e) => events.push(e));
+    const pool = new SessionPool(registry, localFactory, {}, bus);
+    try {
+      await dispatch(
+        { registry, pool, bus },
+        {
+          id: 1,
+          method: "swap",
+          params: { envId: "e", service: "svc", file: artifactPath },
+        },
+      );
+      const cmds = events.flatMap((e) =>
+        e.kind === "command" && e.method === "swap" ? [e.command] : [],
+      );
+      expect(cmds.some((c) => c.includes("[backup] cp"))).toBe(true);
+      expect(cmds.some((c) => c.includes("[upload] base64"))).toBe(true);
+      expect(cmds.some((c) => c.includes("[restart] echo r"))).toBe(true);
+      expect(cmds.some((c) => c.includes("[health] true"))).toBe(true);
     } finally {
       await pool.releaseAll();
       registry.close();

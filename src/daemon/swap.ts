@@ -201,7 +201,10 @@ export async function doSwap(
   const rollback = opts.rollback ?? service.swap?.rollback ?? true;
   const step = opts.onStep ?? (() => {});
 
-  step("backup+upload", `put → ${remotePath}`);
+  // surface the actual mutating commands to the operator/watch (Codex M-1);
+  // the per-chunk base64 appends are intentionally summarized to avoid flooding.
+  step("backup", `cp ${remotePath} ${backupPath(remotePath)} (if present)`);
+  step("upload", `base64 → ${remotePath}.lantern.new → sha256 verify → mv → ${remotePath}`);
   const put = await doPut(run, service, artifact, opts.chunkSize);
 
   step("restart", restartCmd);

@@ -13,8 +13,12 @@ import { dispatch, type DispatchDeps } from "./dispatch";
 import type { RpcResponse } from "./protocol";
 import type { WatchEvent } from "./watch";
 
+/** Drop a watch socket once this many bytes back up unsent (Codex M-2). */
+const MAX_WATCH_BACKLOG = 1_000_000;
+
 interface Writable {
   write(data: string): number;
+  end?(): void;
 }
 
 export class Daemon {
@@ -38,6 +42,7 @@ export class Daemon {
     const bus = this.deps.bus;
     const watchers = this.watchers;
     const buffers = new WeakMap<object, string>();
+    const pending = new WeakMap<object, number>(); // watch socket → backpressured bytes
 
     const writeFrame = (socket: Writable, obj: unknown): void => {
       socket.write(JSON.stringify(obj) + "\n");
@@ -69,12 +74,29 @@ export class Daemon {
       watchers.get(socket)?.(); // replace any prior watcher on this socket
       const unsub = bus.subscribe((e: WatchEvent) => {
         if (envFilter && e.env !== envFilter) return;
+        const data = JSON.stringify({ watch: e }) + "\n";
+        let written: number;
         try {
-          writeFrame(socket, { watch: e });
+          written = socket.write(data);
         } catch {
-          // socket gone — stop streaming to it
           unsub();
           watchers.delete(socket);
+          return;
+        }
+        const deficit = Buffer.byteLength(data) - written;
+        if (deficit <= 0) return;
+        const backlog = (pending.get(socket) ?? 0) + deficit;
+        pending.set(socket, backlog);
+        if (backlog > MAX_WATCH_BACKLOG) {
+          // slow/stuck client — drop it rather than buffer unbounded (Codex M-2)
+          unsub();
+          watchers.delete(socket);
+          pending.delete(socket);
+          try {
+            socket.end?.();
+          } catch {
+            // already gone
+          }
         }
       });
       watchers.set(socket, unsub);
@@ -83,6 +105,7 @@ export class Daemon {
     const drop = (socket: object): void => {
       watchers.get(socket)?.();
       watchers.delete(socket);
+      pending.delete(socket);
     };
 
     this.listener = Bun.listen({
@@ -108,6 +131,9 @@ export class Daemon {
             }
             void respond(deps, line, token).then((resp) => writeFrame(socket, resp));
           }
+        },
+        drain(socket) {
+          pending.set(socket, 0); // send buffer flushed — reset the backlog (M-2)
         },
         close(socket) {
           drop(socket);
