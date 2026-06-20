@@ -111,6 +111,25 @@ export function parseCli(argv: string[]): ParsedCli {
     return { kind: "rpc", method: cmd, params };
   }
 
+  if (cmd === "observe") {
+    const { flags, positional } = parseFlags(rest);
+    if (positional.length > 0) return err(`unexpected argument(s): ${positional.join(" ")}`);
+    const params: Record<string, unknown> = {};
+    if (flags.env) params.envId = flags.env;
+    if (flags.service) params.service = flags.service;
+    if (flags.op) params.op = flags.op;
+    if (flags.class) params.class = flags.class;
+    if (flags.method) params.method = flags.method;
+    if (flags.count) params.count = Number(flags.count);
+    if (flags.timeout) params.timeoutMs = Number(flags.timeout);
+    if (!params.service || !params.op || !params.class || !params.method) {
+      return err(
+        "usage: lantern observe --service <name> --op <watch|trace|stack|tt> --class <FQN> --method <m> [--count N]",
+      );
+    }
+    return { kind: "rpc", method: "observe", params };
+  }
+
   if (cmd === "logs" || cmd === "state" || cmd === "snapshot" || cmd === "exec") {
     const { flags, after, positional } = parseFlags(rest);
     if (positional.length > 0) return err(`unexpected argument(s): ${positional.join(" ")}`);
@@ -163,6 +182,7 @@ Usage:
   lantern put     --service <name> --file <local> [--env <id>] [--chunk-size N]
   lantern restart --service <name> [--env <id>]
   lantern swap    --service <name> --file <local> [--dry-run] [--no-rollback] [--env <id>]
+  lantern observe --service <name> --op <watch|trace|stack|tt> --class <FQN> --method <m> [--count N] [--env <id>]
 
 Read subcommands (env list/current, logs, state) are read-only by construction.
 put/restart/swap are MUTATING (each requires confirmation); swap = backup→upload→restart→health→rollback.

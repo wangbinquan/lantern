@@ -102,6 +102,31 @@ describe("parseCli", () => {
     expect(parseCli(["put", "--service", "x"]).kind).toBe("error"); // no --file
     expect(parseCli(["swap", "--file", "a.jar"]).kind).toBe("error"); // no --service
   });
+
+  test("observe parse + required flags (RFC-0004)", () => {
+    expect(
+      parseCli([
+        "observe",
+        "--service",
+        "x",
+        "--op",
+        "watch",
+        "--class",
+        "com.x.C",
+        "--method",
+        "m",
+        "--count",
+        "5",
+      ]),
+    ).toEqual({
+      kind: "rpc",
+      method: "observe",
+      params: { service: "x", op: "watch", class: "com.x.C", method: "m", count: 5 },
+    });
+    expect(parseCli(["observe", "--service", "x", "--op", "watch", "--class", "C"]).kind).toBe(
+      "error",
+    ); // no --method
+  });
 });
 
 describe("unix socket round-trip (Daemon <-> rpc client)", () => {

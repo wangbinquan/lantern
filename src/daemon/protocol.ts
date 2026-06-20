@@ -18,7 +18,8 @@ export type RpcMethod =
   | "watch"
   | "put"
   | "restart"
-  | "swap";
+  | "swap"
+  | "observe";
 
 export interface RpcRequest {
   id: number;
