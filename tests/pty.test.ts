@@ -9,6 +9,7 @@ import {
   type PtyTransport,
   spawnPty,
   stripAnsi,
+  stripMarkers,
   wrapCommand,
 } from "../src/pty";
 
@@ -54,6 +55,22 @@ describe("marker", () => {
   test("markerRegex captures the exit code", () => {
     const m = markerRegex("id").exec(`${MARKER_PREFIX}id__42\n`);
     expect(m?.[1]).toBe("42");
+  });
+});
+
+describe("stripMarkers", () => {
+  test("removes a completion marker line, keeps the output", () => {
+    const id = newMarkerId();
+    expect(stripMarkers(`4242\n${MARKER_PREFIX}${id}__0\n`)).toBe("4242\n");
+  });
+  test("a marker-only chunk strips to empty", () => {
+    const id = newMarkerId();
+    expect(stripMarkers(`${MARKER_PREFIX}${id}__0\n`)).toBe("");
+  });
+  test("handles negative exit codes and leaves normal text", () => {
+    const id = newMarkerId();
+    expect(stripMarkers(`out\n${MARKER_PREFIX}${id}__-1\n`)).toBe("out\n");
+    expect(stripMarkers("no markers here")).toBe("no markers here");
   });
 });
 

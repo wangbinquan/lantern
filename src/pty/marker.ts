@@ -38,6 +38,14 @@ export function markerRegex(id: string): RegExp {
   return new RegExp(`${MARKER_PREFIX}${id}__(-?\\d+)\\r?\\n?`);
 }
 
+/** Id-agnostic marker-line matcher — strips protocol markers from OBSERVED output. */
+const ANY_MARKER_RE = new RegExp(`${MARKER_PREFIX}[0-9a-f]+__-?\\d+\\r?\\n?`, "g");
+
+/** Remove completion-marker lines from observed terminal output (RFC-0001). */
+export function stripMarkers(s: string): string {
+  return s.replace(ANY_MARKER_RE, "");
+}
+
 /** Locate the marker for `id` in accumulated `text` and split out the result. */
 export function parseCompletion(text: string, id: string): Completion {
   const re = markerRegex(id);

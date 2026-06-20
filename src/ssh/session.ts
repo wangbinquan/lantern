@@ -10,7 +10,14 @@
  * local bash + fake su/ssh fixtures, which exercises the exact same orchestration.
  */
 import { Expecter } from "../pty/expect";
-import { markerRegex, newMarkerId, parseCompletion, stripAnsi, wrapCommand } from "../pty/marker";
+import {
+  markerRegex,
+  newMarkerId,
+  parseCompletion,
+  stripAnsi,
+  stripMarkers,
+  wrapCommand,
+} from "../pty/marker";
 import type { PtyTransport } from "../pty/transport";
 import type { EnvDescriptor, SecretResolver, SuStep, Hop } from "../types";
 import { shellQuote } from "../util/shell";
@@ -164,9 +171,11 @@ export class SessionManager {
     this.factoryCalls += 1;
     this.exp.reset();
     t.onData((chunk) => {
-      this.exp.feed(chunk);
+      this.exp.feed(chunk); // the expecter still gets the RAW chunk (markers intact)
       this.lastActivity = Date.now();
-      this.emit("stdout", this.redact(stripAnsi(chunk)));
+      // observers/watch see clean output — strip the internal completion markers
+      const visible = stripMarkers(this.redact(stripAnsi(chunk)));
+      if (visible.length > 0) this.emit("stdout", visible);
     });
 
     if (this.descriptor.shellInit) this.writeRaw(this.descriptor.shellInit + "\n");

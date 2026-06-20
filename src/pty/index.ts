@@ -4,6 +4,7 @@ export {
   newMarkerId,
   parseCompletion,
   stripAnsi,
+  stripMarkers,
   wrapCommand,
   type Completion,
 } from "./marker";

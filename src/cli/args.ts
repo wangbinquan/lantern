@@ -65,6 +65,15 @@ export function parseCli(argv: string[]): ParsedCli {
     return err(`unknown 'env' subcommand: ${sub ?? "(none)"}`);
   }
 
+  if (cmd === "watch") {
+    const { flags, positional } = parseFlags(rest);
+    if (positional.length > 0) return err(`unexpected argument(s): ${positional.join(" ")}`);
+    const params: Record<string, unknown> = {};
+    if (flags.env) params.env = flags.env;
+    if (flags["no-output"]) params.noOutput = true;
+    return { kind: "rpc", method: "watch", params };
+  }
+
   if (cmd === "logs" || cmd === "state" || cmd === "snapshot" || cmd === "exec") {
     const { flags, after, positional } = parseFlags(rest);
     if (positional.length > 0) return err(`unexpected argument(s): ${positional.join(" ")}`);
@@ -112,6 +121,7 @@ Usage:
   lantern logs   --service <name> [--env <id>] [--grep G | --grep-b64 B64] [--tail N] [--since 5m] [--limit-bytes N] [--container C]
   lantern state  --service <name> [--env <id>]
   lantern exec   [--env <id>] (--command '<cmd>' | -- <cmd> ...)
+  lantern watch  [--env <id>] [--no-output]   # read-only live mirror of env activity
 
 Read subcommands (env list/current, logs, state) are read-only by construction.
 exec is classified by lanternd; catastrophic commands are refused.

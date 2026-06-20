@@ -6,7 +6,8 @@
 import { readFileSync } from "node:fs";
 import { defaultSocketPath, defaultTokenPath, type RunResultPayload } from "../daemon";
 import { HELP, parseCli } from "./args";
-import { rpc } from "./client";
+import { rpc, watchStream } from "./client";
+import { renderWatchEvent } from "./watch-render";
 
 const parsed = parseCli(process.argv.slice(2));
 if (parsed.kind === "help") {
@@ -39,25 +40,49 @@ try {
   token = undefined; // daemon may be running without a token
 }
 
-const resp = await rpc(defaultSocketPath(), { id: 1, method: parsed.method, params, token });
-if (!resp.ok) {
-  process.stderr.write(`lantern: ${resp.error}\n`);
-  process.exit(1);
-}
-
-if (parsed.method === "ping") {
-  process.stdout.write("pong\n");
-} else if (parsed.method.startsWith("env.")) {
-  process.stdout.write(JSON.stringify(resp.result, null, 2) + "\n");
+if (parsed.method === "watch") {
+  // Long-lived read-only mirror (RFC-0001): stream + render until Ctrl-C.
+  const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
+  const showOutput = params.noOutput !== true;
+  const handle = await watchStream(defaultSocketPath(), { params, token }, (frame) => {
+    if (frame.ok === false) {
+      process.stderr.write(`lantern watch: ${frame.error}\n`);
+      process.exit(1);
+    }
+    if (frame.watch) {
+      const line = renderWatchEvent(frame.watch, { color, showOutput });
+      if (line) process.stdout.write(line + "\n");
+    } else if (frame.result) {
+      process.stderr.write(
+        `lantern watch: attached (watching ${frame.result.watching ?? "*"}, Ctrl-C to detach)\n`,
+      );
+    }
+  });
+  process.on("SIGINT", () => {
+    handle.close();
+    process.exit(0);
+  });
 } else {
-  const r = resp.result as RunResultPayload;
-  // Surface the EXPANDED remote command so the operator sees what actually ran
-  // (read subcommands expand server-side; Codex M3).
-  process.stderr.write(
-    `[lantern${params.envId ? ` ${String(params.envId)}` : ""}] $ ${r.command}\n`,
-  );
-  if (r.stdout.length > 0) {
-    process.stdout.write(r.stdout.endsWith("\n") ? r.stdout : r.stdout + "\n");
+  const resp = await rpc(defaultSocketPath(), { id: 1, method: parsed.method, params, token });
+  if (!resp.ok) {
+    process.stderr.write(`lantern: ${resp.error}\n`);
+    process.exit(1);
   }
-  process.exit(r.exitCode ?? 0);
+
+  if (parsed.method === "ping") {
+    process.stdout.write("pong\n");
+  } else if (parsed.method.startsWith("env.")) {
+    process.stdout.write(JSON.stringify(resp.result, null, 2) + "\n");
+  } else {
+    const r = resp.result as RunResultPayload;
+    // Surface the EXPANDED remote command so the operator sees what actually ran
+    // (read subcommands expand server-side; Codex M3).
+    process.stderr.write(
+      `[lantern${params.envId ? ` ${String(params.envId)}` : ""}] $ ${r.command}\n`,
+    );
+    if (r.stdout.length > 0) {
+      process.stdout.write(r.stdout.endsWith("\n") ? r.stdout : r.stdout + "\n");
+    }
+    process.exit(r.exitCode ?? 0);
+  }
 }
