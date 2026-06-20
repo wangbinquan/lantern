@@ -14,7 +14,8 @@ export type RpcMethod =
   | "logs"
   | "state"
   | "snapshot"
-  | "exec";
+  | "exec"
+  | "watch";
 
 export interface RpcRequest {
   id: number;
