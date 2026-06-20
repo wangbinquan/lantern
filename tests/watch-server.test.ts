@@ -81,13 +81,30 @@ describe("watch streaming RPC (RFC-0001 slice 3)", () => {
         token: TOKEN,
       });
 
-      await waitFor(() => w.frames.some((f) => f.watch?.kind === "command"));
-      const events = w.frames.flatMap((f) => (f.watch ? [f.watch] : []));
-      const kinds = events.map((e) => e.kind);
+      await waitFor(() => w.frames.some((f) => f.watch?.kind === "exit"));
+      const events = (): WatchEvent[] => w.frames.flatMap((f) => (f.watch ? [f.watch] : []));
+      const kinds = events().map((e) => e.kind);
       expect(kinds).toContain("command");
+      expect(kinds).toContain("stdout");
       expect(kinds).toContain("exit");
-      const cmd = events.find((e) => e.kind === "command");
+      const cmd = events().find((e) => e.kind === "command");
       expect(cmd?.kind === "command" && cmd.command).toContain("echo 4242");
+      // marker lines are stripped; the real output reaches the stream
+      expect(events().some((e) => e.kind === "stdout" && e.text.includes("4242"))).toBe(true);
+      expect(events().some((e) => e.kind === "stdout" && e.text.includes("__OC_DONE_"))).toBe(
+        false,
+      );
+
+      // a catastrophic exec surfaces as a deny in the live stream
+      await rpc(socketPath, {
+        id: 3,
+        method: "exec",
+        params: { envId: "e", command: "rm -rf /tmp/x" },
+        token: TOKEN,
+      });
+      await waitFor(() => w.frames.some((f) => f.watch?.kind === "denied"));
+      const denied = events().find((e) => e.kind === "denied");
+      expect(denied?.kind === "denied" && denied.reason).toContain("rm -rf");
     } finally {
       w.close();
       daemon.stop();

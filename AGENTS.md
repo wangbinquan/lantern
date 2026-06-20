@@ -13,6 +13,11 @@ tool. The hardened permission ruleset is in `.opencode/opencode.json`.
 3. Point opencode at an internal LLM gateway in `.opencode/opencode.json`
    (`provider`/`model` with the OpenAI/Anthropic-compatible `baseURL` + key).
 4. Run opencode (`opencode serve` + TUI) with `--password` bound to loopback.
+5. (Optional, recommended) Open a second terminal and run `lantern watch` for a
+   **read-only live mirror** of everything lanternd does on the environment
+   (connection chain, commands, output, exit codes, denials — passwords `***`).
+   Two-window model: converse + approve in opencode, observe in `lantern watch`.
+   It shows already-executed commands (approval happens in opencode beforehand).
 
 ## Hard rules for the agent
 - **Operate the environment ONLY via `lantern`.** Raw `ssh`/`su` are denied by

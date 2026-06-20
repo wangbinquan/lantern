@@ -1,6 +1,6 @@
 # RFC-0001: `lantern watch` — 只读实时会话镜像
 
-- **Status**: Draft
+- **Status**: Implemented (2026-06-20)
 - **Date**: 2026-06-20
 - **Author**: Lantern
 - **Relates**: `design.md`(实时可见性 / 第 2 层安全)、`AGENTS.md`、`review-followups.md`
@@ -149,8 +149,20 @@ Daemon 持有一个 `EventBus`:
 4. CLI:`watchStream` 客户端 + `lantern watch` 渲染器 + HELP + L3 风格参数校验。
 5. e2e + 文档(AGENTS.md "开一个 watch 窗口"、README/design 提一句)。
 
-## 9. Unresolved questions
+## 9. Unresolved questions(已定稿)
 
-- 环形缓冲大小:默认 **512 条 或 256 KB**(取先到)?
-- `connect` 链路串:从描述符推导(`ops@host → su X → ssh Y → su Z`),密码不入串——OK?
-- 多 env 时是否给每个 env 不同颜色前缀(nice-to-have,可放 slice 4 末)。
+- 环形缓冲大小:实现为默认 **512 条事件**(`EventBus({bufferSize})` 可调)。
+- `connect` 链路串:从描述符推导(`ops@host → su X → ssh Y → su Z`),密码不入串。已实现。
+- 多 env 不同颜色前缀:暂未做(Phase 2 nice-to-have)。
+
+## 10. Implementation notes
+
+- **Marker 过滤**:PTY 的内部完成标记 `__OC_DONE_<id>__<code>` 会进原始 chunk;新增
+  `stripMarkers`,SessionManager 在**观察者 emit**(非协议路径)处剥离,watch 流保持干净
+  (expecter 仍吃原始 chunk)。已加 `stripMarkers` 单测 + e2e 断言流里无 `__OC_DONE_`。
+- **connect 横幅时序**:连接在**首条命令**触发(懒连接),故 `● connected` 横幅出现在首条
+  `command` 行之后而非之前——可接受;真正展示连接进度的是随后的 `step` 行。
+- **慢客户端**:v1 依赖 Bun socket 自带缓冲 + 有界回放环;写失败(死 socket)即退订。
+  per-subscriber 硬队列上限留 Phase 2。
+- **审批不可见**:opencode 在调用 `lantern` **之前**完成审批(§4.3),故 watch 只见
+  已执行命令 + lanternd 的灾难拒绝,不见"待批准"。
