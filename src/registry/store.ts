@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { EnvDescriptor, SecretResolver } from "../types";
 import { EnvDescriptorSchema } from "./schema";
-import { SqliteSecretStore, type SecretStore } from "./secret-store";
+import { pickSecretStore, type SecretStore } from "./secret-store";
 
 export function defaultRegistryPath(): string {
   return join(homedir(), ".lantern", "registry.db");
@@ -32,23 +32,36 @@ export class RegistryError extends Error {
 export class Registry {
   private readonly db: Database;
   private readonly secrets: SecretStore;
+  /** Human name of the chosen secret backend (for startup logging). */
+  readonly secretBackend: string;
 
   constructor(path: string = defaultRegistryPath(), secretStore?: SecretStore) {
-    if (path !== ":memory:") {
+    const onDisk = path !== ":memory:";
+    // chmod is POSIX-only — a no-op (and meaningless) on Windows, where the db is
+    // protected by the user-profile ACL + DPAPI-encrypted secrets instead.
+    const posix = process.platform !== "win32";
+    if (onDisk) {
       const dir = dirname(path);
       mkdirSync(dir, { recursive: true });
-      chmodSync(dir, 0o700); // secrets/registry live here — owner-only (Codex H7)
+      if (posix) chmodSync(dir, 0o700); // secrets/registry live here — owner-only (Codex H7)
     }
     this.db = new Database(path, { create: true });
-    if (path !== ":memory:") chmodSync(path, 0o600);
+    if (onDisk && posix) chmodSync(path, 0o600);
     this.db.run("PRAGMA journal_mode = WAL");
     this.db.run(
       "CREATE TABLE IF NOT EXISTS environments (id TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at INTEGER NOT NULL)",
     );
     this.db.run("CREATE TABLE IF NOT EXISTS secrets (ref TEXT PRIMARY KEY, value TEXT NOT NULL)");
     this.db.run("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-    // Default to the SQLite-backed store; lanternd injects KeychainSecretStore.
-    this.secrets = secretStore ?? new SqliteSecretStore(this.db);
+    // Pick an OS vault by platform; an injected store (tests) wins.
+    if (secretStore) {
+      this.secrets = secretStore;
+      this.secretBackend = "injected";
+    } else {
+      const picked = pickSecretStore(this.db, path);
+      this.secrets = picked.store;
+      this.secretBackend = picked.name;
+    }
   }
 
   // ---- environments ----

@@ -4,7 +4,7 @@
  * without a TTY or daemon; `runEnvInitCli` is the thin production wiring.
  */
 import { registryDbPath } from "../paths";
-import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
+import { Registry } from "../registry";
 import type { EnvDescriptor } from "../types";
 import {
   buildEnvInitPlan,
@@ -209,8 +209,7 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
 }
 
 function openInitRegistry(): Registry {
-  const useKeychain = process.env.LANTERN_LOCAL_SHELL !== "1" && keychainAvailable();
-  return new Registry(registryDbPath(), useKeychain ? new KeychainSecretStore() : undefined);
+  return new Registry(registryDbPath()); // Registry picks the secret backend by platform
 }
 
 /** Production wiring: real TTY asker + ssh-keyscan, writing the registry directly (no daemon). */

@@ -6,7 +6,7 @@
  * `env_list` + `exec` to opencode.
  */
 import { registryDbPath } from "../paths";
-import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
+import { Registry } from "../registry";
 import { runEnvInitCli, runNodeAddCli, runRoleAddCli } from "./env-init";
 import { runMonitor } from "./monitor";
 
@@ -25,8 +25,7 @@ Registry: ~/.lantern/registry.db (or $LANTERN_HOME); secrets: OS keychain.
 The MCP server reads these and gives opencode the env_list + exec tools.`;
 
 function openRegistry(): Registry {
-  const useKeychain = process.env.LANTERN_LOCAL_SHELL !== "1" && keychainAvailable();
-  return new Registry(registryDbPath(), useKeychain ? new KeychainSecretStore() : undefined);
+  return new Registry(registryDbPath()); // Registry picks the secret backend by platform
 }
 
 const [cmd, sub, arg, ...rest] = process.argv.slice(2);

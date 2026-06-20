@@ -12,15 +12,14 @@ import { z } from "zod";
 import { execLogPath, registryDbPath } from "../paths";
 import { SessionPool } from "../session";
 import { spawnPty } from "../pty";
-import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
+import { Registry } from "../registry";
 import { VERSION } from "../version";
 import { envListTool, execTool, type McpDeps } from "./tools";
 
 const localShell = process.env.LANTERN_LOCAL_SHELL === "1";
 const dbPath = registryDbPath();
-const useKeychain = !localShell && keychainAvailable();
 
-const registry = new Registry(dbPath, useKeychain ? new KeychainSecretStore() : undefined);
+const registry = new Registry(dbPath); // picks keychain / secret-service / DPAPI / sqlite by platform
 const pool = localShell
   ? new SessionPool(registry, () => () => spawnPty(["bash", "--norc", "--noprofile"]))
   : new SessionPool(registry);
@@ -73,7 +72,7 @@ server.registerTool(
 );
 
 process.stderr.write(
-  `lantern MCP server (${VERSION}) — db ${dbPath}, secrets ${useKeychain ? "keychain" : "sqlite"}${localShell ? ", LOCAL-SHELL" : ""}\n`,
+  `lantern MCP server (${VERSION}) — db ${dbPath}, secrets: ${registry.secretBackend}${localShell ? " [LOCAL-SHELL]" : ""}\n`,
 );
 await server.connect(new StdioServerTransport());
 
