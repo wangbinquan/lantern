@@ -48,54 +48,15 @@ export const SessionPolicySchema = z.object({
   idleSec: z.number().nonnegative().optional(),
 });
 
-export const RepoRefSchema = z.object({
-  local: z.string().optional(),
-  git: z.string().optional(),
-  ref: z.string().optional(),
-});
-
-export const SwapRecipeSchema = z.object({
-  mode: z.enum(["auto", "ci", "manual"]),
-  buildCmd: z.string().optional(),
-  artifact: z.string().optional(),
-  putMethod: z.enum(["scp", "base64"]).optional(),
-  remotePath: z.string().optional(),
-  restartCmd: z.string().optional(),
-  healthCmd: z.string().optional(),
-  rollback: z.boolean().optional(),
-});
-
-export const ServiceLocateSchema = z.object({
-  k8s: z.object({ namespace: z.string().optional(), selector: z.string().optional() }).optional(),
-  pid: z.string().optional(),
-});
-
-export const ServiceLogsSchema = z.object({
-  k8s: z.string().optional(),
-  file: z.string().optional(),
-});
-
-export const ServiceDescriptorSchema = z.object({
-  name: z.string().min(1),
-  runtime: z.enum(["jvm", "go", "python"]),
-  locate: ServiceLocateSchema.optional(),
-  logs: ServiceLogsSchema.optional(),
-  repo: RepoRefSchema.optional(),
-  diag: z.object({ arthasJar: z.string().optional() }).optional(),
-  swap: SwapRecipeSchema.optional(),
-});
-
 export const EnvDescriptorSchema = z.object({
   id: z.string().min(1),
   label: z.string().optional(),
-  form: z.enum(["k8s", "proprietary"]),
   bastion: BastionSchema,
   escalate: z.array(SuStepSchema).optional(),
   hops: z.array(HopSchema).optional(),
   shellInit: z.string().optional(),
   promptSyncTimeoutMs: z.number().optional(),
   session: SessionPolicySchema.optional(),
-  services: z.array(ServiceDescriptorSchema).optional(),
 });
 
 /** Type inferred from the schema (must stay assignable to types.ts EnvDescriptor). */

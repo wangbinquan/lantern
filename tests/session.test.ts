@@ -29,7 +29,6 @@ function factory(initialWho = "low") {
 function descriptor(over: Partial<EnvDescriptor> = {}): EnvDescriptor {
   return {
     id: "test",
-    form: "proprietary",
     bastion: { host: "127.0.0.1", loginUser: "low", auth: { type: "password", secretRef: "low" } },
     ...over,
   };

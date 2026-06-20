@@ -8,7 +8,6 @@ import type { EnvDescriptor } from "../src/types";
 const SAMPLE: EnvDescriptor = {
   id: "env-A-dev",
   label: "订单域-研发环境A",
-  form: "k8s",
   bastion: {
     host: "1.2.3.4",
     port: 22,
@@ -27,33 +26,6 @@ const SAMPLE: EnvDescriptor = {
   ],
   shellInit: "stty -echo 2>/dev/null; export LANG=C",
   session: { ttlSec: 1800, idleSec: 600 },
-  services: [
-    {
-      name: "order-svc",
-      runtime: "jvm",
-      locate: {
-        k8s: { namespace: "order", selector: "app=order-svc" },
-        pid: "pgrep -f order-svc.jar",
-      },
-      logs: { k8s: "kubectl -n order logs -l app=order-svc", file: "/var/log/order/order-svc.log" },
-      repo: {
-        local: "/Users/x/code/order-svc",
-        git: "ssh://git@h/order-svc.git",
-        ref: "release/3.2",
-      },
-      diag: { arthasJar: "/opt/arthas/arthas-boot.jar" },
-      swap: {
-        mode: "auto",
-        buildCmd: "mvn -q package",
-        artifact: "target/order-svc.jar",
-        putMethod: "base64",
-        remotePath: "/opt/app/order-svc/order-svc.jar",
-        restartCmd: "kubectl -n order rollout restart deploy/order-svc",
-        healthCmd: "kubectl -n order rollout status deploy/order-svc",
-        rollback: true,
-      },
-    },
-  ],
 };
 
 describe("Registry (in-memory)", () => {
@@ -73,12 +45,12 @@ describe("Registry (in-memory)", () => {
   test("upsert overwrites; listEnvs returns summaries", () => {
     const r = new Registry(":memory:");
     r.upsertEnv(SAMPLE);
-    r.upsertEnv({ ...SAMPLE, id: "env-B", label: "B", form: "proprietary" });
+    r.upsertEnv({ ...SAMPLE, id: "env-B", label: "B" });
     r.upsertEnv({ ...SAMPLE, label: "A-renamed" });
     const list = r.listEnvs();
     expect(list).toEqual([
-      { id: "env-A-dev", label: "A-renamed", form: "k8s" },
-      { id: "env-B", label: "B", form: "proprietary" },
+      { id: "env-A-dev", label: "A-renamed" },
+      { id: "env-B", label: "B" },
     ]);
     r.close();
   });
@@ -95,11 +67,7 @@ describe("Registry (in-memory)", () => {
   test("invalid descriptor is rejected on upsert", () => {
     const r = new Registry(":memory:");
     // missing bastion
-    expect(() => r.upsertEnv({ id: "bad", form: "k8s" } as unknown as EnvDescriptor)).toThrow();
-    // bad form enum
-    expect(() =>
-      r.upsertEnv({ ...SAMPLE, form: "vmware" as unknown as EnvDescriptor["form"] }),
-    ).toThrow();
+    expect(() => r.upsertEnv({ id: "bad" } as unknown as EnvDescriptor)).toThrow();
     // shell-metacharacter username / host are rejected (Codex H2 defense-in-depth)
     expect(() =>
       r.upsertEnv({

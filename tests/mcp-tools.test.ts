@@ -11,7 +11,6 @@ function setup(): { deps: McpDeps; registry: Registry; pool: SessionPool } {
   const registry = new Registry(":memory:");
   const env: EnvDescriptor = {
     id: "e",
-    form: "proprietary",
     bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
   };
   registry.upsertEnv(env);

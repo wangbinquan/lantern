@@ -8,17 +8,7 @@
  * (env-init.ts) only collects answers and ships the plan.
  */
 import { EnvDescriptorSchema } from "../registry";
-import type {
-  Bastion,
-  BastionAuth,
-  EnvDescriptor,
-  Hop,
-  Runtime,
-  ServiceDescriptor,
-  ServiceLogs,
-  ServiceLocate,
-  SuStep,
-} from "../types";
+import type { Bastion, BastionAuth, EnvDescriptor, Hop, SuStep } from "../types";
 
 export interface SuAnswer {
   user: string;
@@ -46,22 +36,13 @@ export interface HopAnswer {
   escalate?: SuAnswer[];
 }
 
-export interface ServiceAnswer {
-  name: string;
-  runtime: Runtime;
-  locate?: ServiceLocate;
-  logs?: ServiceLogs;
-}
-
 export interface EnvInitAnswers {
   id: string;
   label?: string;
-  form: "proprietary" | "k8s";
   bastion: BastionAnswer;
   /** su chain on the bastion (after login). */
   escalate?: SuAnswer[];
   hops?: HopAnswer[];
-  services?: ServiceAnswer[];
 }
 
 export interface EnvInitPlan {
@@ -120,18 +101,10 @@ export function buildEnvInitPlan(a: EnvInitAnswers): EnvInitPlan {
     return hop;
   });
 
-  const services: ServiceDescriptor[] = (a.services ?? []).map((s) => {
-    const svc: ServiceDescriptor = { name: s.name, runtime: s.runtime };
-    if (s.locate) svc.locate = s.locate;
-    if (s.logs) svc.logs = s.logs;
-    return svc;
-  });
-
-  const env: EnvDescriptor = { id: a.id, form: a.form, bastion };
+  const env: EnvDescriptor = { id: a.id, bastion };
   if (a.label) env.label = a.label;
   if (escalate.length > 0) env.escalate = escalate;
   if (hops.length > 0) env.hops = hops;
-  if (services.length > 0) env.services = services;
 
   // Single source of truth for validation (id/host/user regexes live in the schema).
   const validated = EnvDescriptorSchema.parse(env) as EnvDescriptor;

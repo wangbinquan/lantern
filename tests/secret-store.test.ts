@@ -42,7 +42,6 @@ describe("Registry with an injected secret store (Codex C1)", () => {
       const r = new Registry(path, new MemorySecretStore());
       const env: EnvDescriptor = {
         id: "e",
-        form: "k8s",
         bastion: { host: "h", loginUser: "u", auth: { type: "password", secretRef: "e/low" } },
       };
       r.upsertEnv(env);

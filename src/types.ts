@@ -1,12 +1,10 @@
 /**
- * Environment descriptor types (design.md §3.1). Stored in the registry
- * (bun:sqlite @ ~/.lantern, outside the opencode workspace). Passwords are held
- * as `secretRef` labels; real values are resolved by lanternd at send-time and
- * never enter model-visible text.
+ * Environment CONNECTION descriptor (RFC-0005). Stored in the registry
+ * (bun:sqlite @ ~/.lantern, outside the opencode workspace). Describes ONLY how to
+ * reach the env over the multi-hop/su chain — no service/logs/swap config (that's
+ * each team's skill). Passwords are held as `secretRef` labels; real values are
+ * resolved by the MCP server at connect-time and never enter model-visible text.
  */
-
-export type Runtime = "jvm" | "go" | "python";
-export type EnvForm = "k8s" | "proprietary";
 
 /** A single `su - <user>` escalation step. */
 export interface SuStep {
@@ -53,54 +51,15 @@ export interface SessionPolicy {
   idleSec?: number;
 }
 
-export interface RepoRef {
-  local?: string;
-  git?: string;
-  ref?: string;
-}
-
-export interface SwapRecipe {
-  mode: "auto" | "ci" | "manual";
-  buildCmd?: string;
-  artifact?: string;
-  putMethod?: "scp" | "base64";
-  remotePath?: string;
-  restartCmd?: string;
-  healthCmd?: string;
-  rollback?: boolean;
-}
-
-export interface ServiceLocate {
-  k8s?: { namespace?: string; selector?: string };
-  pid?: string;
-}
-
-export interface ServiceLogs {
-  k8s?: string;
-  file?: string;
-}
-
-export interface ServiceDescriptor {
-  name: string;
-  runtime: Runtime;
-  locate?: ServiceLocate;
-  logs?: ServiceLogs;
-  repo?: RepoRef;
-  diag?: { arthasJar?: string };
-  swap?: SwapRecipe;
-}
-
 export interface EnvDescriptor {
   id: string;
   label?: string;
-  form: EnvForm;
   bastion: Bastion;
   escalate?: SuStep[];
   hops?: Hop[];
   shellInit?: string;
   promptSyncTimeoutMs?: number;
   session?: SessionPolicy;
-  services?: ServiceDescriptor[];
 }
 
 /** Resolves a `secretRef` to its plaintext value (registry / keychain / vault). */

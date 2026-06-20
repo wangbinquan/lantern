@@ -20,7 +20,6 @@ export function defaultRegistryPath(): string {
 export interface EnvSummary {
   id: string;
   label?: string;
-  form: string;
 }
 
 export class RegistryError extends Error {
@@ -78,7 +77,7 @@ export class Registry {
     }[];
     return rows.map((r) => {
       const d = JSON.parse(r.json) as EnvDescriptor;
-      return { id: d.id, label: d.label, form: d.form };
+      return { id: d.id, label: d.label };
     });
   }
 

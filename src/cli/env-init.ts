@@ -5,13 +5,12 @@
  */
 import { registryDbPath } from "../paths";
 import { KeychainSecretStore, keychainAvailable, Registry } from "../registry";
-import type { EnvDescriptor, Runtime } from "../types";
+import type { EnvDescriptor } from "../types";
 import {
   buildEnvInitPlan,
   type AuthAnswer,
   type EnvInitAnswers,
   type HopAnswer,
-  type ServiceAnswer,
   type SuAnswer,
 } from "./env-init-plan";
 import { fetchHostKeyFingerprint, type HostKeyResult } from "./host-key";
@@ -56,10 +55,6 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
   const { asker, log } = deps;
 
   const label = await ask(asker, "环境标签 (可空)");
-  const form = (await ask(asker, "形态 [proprietary/k8s]", {
-    default: "proprietary",
-    validate: oneOf(["proprietary", "k8s"]),
-  })) as "proprietary" | "k8s";
 
   // ---- bastion ----
   const host = await ask(asker, "堡垒地址", { validate: v.host });
@@ -138,40 +133,13 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
     } while (await confirm(asker, "再跳一个内网节点?", false));
   }
 
-  // ---- services ----
-  const services: ServiceAnswer[] = [];
-  while (await confirm(asker, "添加服务?", services.length === 0)) {
-    const name = await ask(asker, "  服务名", { validate: v.nonEmpty });
-    const runtime = (await ask(asker, "  运行时 [jvm/go/python]", {
-      default: "jvm",
-      validate: oneOf(["jvm", "go", "python"]),
-    })) as Runtime;
-    const svc: ServiceAnswer = { name, runtime };
-    if (form === "k8s") {
-      const namespace = await ask(asker, "  k8s namespace", { validate: v.nonEmpty });
-      const selector = await ask(asker, "  k8s selector (如 app=order)", { validate: v.nonEmpty });
-      svc.locate = { k8s: { namespace, selector } };
-      const tmpl = await ask(asker, "  日志命令模板 (可空,默认 kubectl logs)");
-      if (tmpl) svc.logs = { k8s: tmpl };
-    } else {
-      svc.locate = {
-        pid: await ask(asker, "  PID 定位命令 (如 pgrep -f x.jar)", { validate: v.nonEmpty }),
-      };
-      const logFile = await ask(asker, "  日志文件路径 (可空)");
-      if (logFile) svc.logs = { file: logFile };
-    }
-    services.push(svc);
-  }
-
-  // ---- assemble + deliver ----
+  // ---- assemble + deliver (connection only — services/logs are each skill's job) ----
   const answers: EnvInitAnswers = {
     id,
-    form,
     label: label || undefined,
     bastion: { host, port, loginUser, auth, hostKeySha256, insecureHostKey },
     escalate: escalate.length ? escalate : undefined,
     hops: hops.length ? hops : undefined,
-    services: services.length ? services : undefined,
   };
   const plan = buildEnvInitPlan(answers);
 
@@ -186,10 +154,7 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
     `✔ 已保存环境 "${id}"(密钥已入钥匙串,${hostKeySha256 ? "host key 已 pin" : "未校验 host key"})` +
       `${opts.noUse ? "" : ",已设为当前环境"}。`,
   );
-  const firstSvc = services[0]?.name;
-  if (firstSvc) {
-    log(`  环境已就绪。opencode 经 MCP 的 exec 工具即可在 "${id}" 上执行命令。`);
-  }
+  log(`  环境已就绪。opencode 经 MCP 的 exec 工具即可在 "${id}" 上执行命令。`);
 }
 
 /** Production wiring: real TTY asker + ssh-keyscan, writing the registry directly (no daemon). */

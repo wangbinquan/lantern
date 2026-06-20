@@ -16,7 +16,6 @@ function fakeTransport(): PtyTransport {
 function descriptor(over: Partial<EnvDescriptor> = {}): EnvDescriptor {
   return {
     id: "env-A",
-    form: "k8s",
     bastion: {
       host: "1.2.3.4",
       loginUser: "low",

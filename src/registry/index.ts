@@ -6,4 +6,4 @@ export {
   keychainAvailable,
   type SecretStore,
 } from "./secret-store";
-export { EnvDescriptorSchema, ServiceDescriptorSchema, type ParsedEnvDescriptor } from "./schema";
+export { EnvDescriptorSchema, type ParsedEnvDescriptor } from "./schema";

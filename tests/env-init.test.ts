@@ -29,7 +29,6 @@ function refsOf(env: EnvDescriptor): string[] {
 
 const base: EnvInitAnswers = {
   id: "prod-a",
-  form: "proprietary",
   bastion: {
     host: "10.1.2.3",
     loginUser: "ops",
@@ -122,23 +121,6 @@ describe("buildEnvInitPlan (RFC-0002 slice 1)", () => {
     expect(secrets).toEqual({});
   });
 
-  test("services (proprietary + k8s)", () => {
-    const { env } = buildEnvInitPlan({
-      ...base,
-      services: [
-        {
-          name: "order-svc",
-          runtime: "jvm",
-          locate: { pid: "pgrep -f order" },
-          logs: { file: "/app/x.log" },
-        },
-        { name: "web", runtime: "go", locate: { k8s: { namespace: "ns", selector: "app=web" } } },
-      ],
-    });
-    expect(env.services?.length).toBe(2);
-    expect(env.services?.[0]).toMatchObject({ name: "order-svc", runtime: "jvm" });
-  });
-
   test("secrets keys exactly match the descriptor's secretRefs", () => {
     const { env, secrets } = buildEnvInitPlan({
       ...base,
@@ -189,28 +171,10 @@ describe("runEnvInit flow (RFC-0002 slice 4)", () => {
     return { sent, deps };
   }
 
-  test("password bastion + host-key auto-pin + one service → env.add then env.use", async () => {
-    // ordered answers: label, form, host, port, user, authKind, password,
-    //   confirm-pin, su(none), confirm-hops(n), confirm-add-svc(default y),
-    //   svc name, runtime, pid, logfile, confirm-add-svc(n)
-    const { sent, deps } = captureDeps([
-      "",
-      "",
-      "h",
-      "",
-      "ops",
-      "",
-      "pw-ops",
-      "",
-      "",
-      "n",
-      "",
-      "order-svc",
-      "",
-      "pgrep -f order",
-      "",
-      "n",
-    ]);
+  test("password bastion + host-key auto-pin → env.add then env.use", async () => {
+    // ordered answers: label, host, port, user, authKind, password,
+    //   confirm-pin, su(none), confirm-hops(n)
+    const { sent, deps } = captureDeps(["", "h", "", "ops", "", "pw-ops", "", "", "n"]);
     await runEnvInit("prod-a", {}, deps);
 
     expect(sent.map((s) => s.method)).toEqual(["env.add", "env.use"]);
@@ -223,17 +187,12 @@ describe("runEnvInit flow (RFC-0002 slice 4)", () => {
     });
     expect(add.env.bastion.auth.type).toBe("password");
     expect(add.secrets[add.env.bastion.auth.secretRef!]).toBe("pw-ops");
-    expect(add.env.services?.[0]).toMatchObject({
-      name: "order-svc",
-      runtime: "jvm",
-      locate: { pid: "pgrep -f order" },
-    });
     expect(sent[1]!.params).toEqual({ id: "prod-a" });
   });
 
   test("--insecure-host-key skips the fetch + pin; --no-use skips env.use", async () => {
     const { sent, deps } = captureDeps(
-      ["", "", "h", "", "ops", "", "pw", "", "n", "n"], // no host-key Qs, no su/hop/svc
+      ["", "h", "", "ops", "", "pw", "", "n"], // no host-key Qs, no su/hop
       {
         fetchFingerprint: () => {
           throw new Error("must not fetch when --insecure-host-key");
@@ -249,15 +208,15 @@ describe("runEnvInit flow (RFC-0002 slice 4)", () => {
   });
 
   test("scan failure + declined insecure → aborts, never silently insecure (H-1)", async () => {
-    // label, form, host, port, user, authKind, password, manual(blank), confirm-insecure(n)
-    const { deps } = captureDeps(["", "", "h", "", "ops", "", "pw", "", "n"], {
+    // label, host, port, user, authKind, password, manual(blank), confirm-insecure(n)
+    const { deps } = captureDeps(["", "h", "", "ops", "", "pw", "", "n"], {
       fetchFingerprint: () => null,
     });
     await expect(runEnvInit("e", {}, deps)).rejects.toThrow(/host key not pinned/);
   });
 
   test("scan failure + EXPLICIT insecure confirmation sets insecureHostKey (H-1)", async () => {
-    const { sent, deps } = captureDeps(["", "", "h", "", "ops", "", "pw", "", "y", "", "n", "n"], {
+    const { sent, deps } = captureDeps(["", "h", "", "ops", "", "pw", "", "y", "", "n"], {
       fetchFingerprint: () => null,
     });
     await runEnvInit("e", {}, deps);
