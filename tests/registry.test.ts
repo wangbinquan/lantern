@@ -14,16 +14,17 @@ const SAMPLE: EnvDescriptor = {
     loginUser: "low",
     auth: { type: "password", secretRef: "env-A/low" },
   },
-  escalate: [{ type: "su", user: "high", secretRef: "env-A/high", promptRe: "[Pp]assword:" }],
-  hops: [
-    {
+  nodes: {
+    app1: {
+      via: [{ type: "su", user: "jump", secretRef: "env-A/jump", promptRe: "[Pp]assword:" }],
       to: "10.0.0.12",
-      viaUser: "jump",
-      viaSecretRef: "env-A/jump",
       sshSecretRef: "env-A/node12",
-      escalate: [{ type: "su", user: "high", secretRef: "env-A/high" }],
     },
-  ],
+  },
+  roles: {
+    diagnose: { at: "app1", su: [{ type: "su", user: "high", secretRef: "env-A/high" }] },
+    deploy: { su: [{ type: "su", user: "deployer", secretRef: "env-A/deployer" }] },
+  },
   shellInit: "stty -echo 2>/dev/null; export LANG=C",
   session: { ttlSec: 1800, idleSec: 600 },
 };

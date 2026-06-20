@@ -49,12 +49,16 @@ server.registerTool(
   "exec",
   {
     description:
-      "Run a shell command on an isolated environment's persistent SSH session " +
-      "(bastion login → su → ssh internal → su). Returns {stdout, exitCode}. " +
+      "Run a shell command on an isolated environment as a chosen role/identity " +
+      "(bastion login → node → su to the role's user). Returns {stdout, exitCode}. " +
       "Passwords are injected at the PTY and never returned.",
     inputSchema: {
       env: z.string().describe("environment id (from env_list)"),
       command: z.string().describe("shell command to run on the environment"),
+      role: z
+        .string()
+        .optional()
+        .describe("identity to run as (from env_list.roles); omit if the env has one role"),
       timeoutMs: z.number().int().positive().optional().describe("per-command timeout in ms"),
     },
   },

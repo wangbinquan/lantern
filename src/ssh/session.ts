@@ -19,7 +19,7 @@ import {
   wrapCommand,
 } from "../pty/marker";
 import type { PtyTransport } from "../pty/transport";
-import type { EnvDescriptor, SecretResolver, SuStep, Hop } from "../types";
+import type { ChainStep, EnvDescriptor, SecretResolver } from "../types";
 import { shellQuote } from "../util/shell";
 
 export class SessionError extends Error {
@@ -74,6 +74,8 @@ export class SessionManager {
     private readonly factory: TransportFactory,
     private readonly descriptor: EnvDescriptor,
     private readonly opts: SessionOptions,
+    /** Resolved su/ssh steps to run after the bastion login (RFC-0007 resolveChain). */
+    private readonly chain: ChainStep[] = [],
   ) {}
 
   private get whoamiCmd(): string {
@@ -183,8 +185,10 @@ export class SessionManager {
       // initial responsiveness sync (marker round-trip past any banner/MOTD)
       await this.rawRun("true", this.syncTimeoutMs);
 
-      for (const step of this.descriptor.escalate ?? []) await this.suStep(step);
-      for (const hop of this.descriptor.hops ?? []) await this.doHop(hop);
+      for (const step of this.chain) {
+        if (step.kind === "su") await this.suStep(step);
+        else await this.sshStep(step);
+      }
 
       this.connected = true;
       this.connectedAt = Date.now();
@@ -198,8 +202,12 @@ export class SessionManager {
     }
   }
 
-  private async suStep(step: SuStep): Promise<void> {
-    this.emit("step", `escalate: su - ${step.user}`);
+  private async suStep(step: {
+    user: string;
+    secretRef: string;
+    promptRe?: string;
+  }): Promise<void> {
+    this.emit("step", `su - ${step.user}`);
     this.writeRaw(`su - ${shellQuote(step.user)}\n`);
     const re = step.promptRe ? new RegExp(step.promptRe) : this.passwordPrompt;
     await this.exp.expect(re, this.syncTimeoutMs);
@@ -210,23 +218,13 @@ export class SessionManager {
     }
   }
 
-  private async doHop(hop: Hop): Promise<void> {
-    // 1) become the jump user on the current host
-    await this.suStep({
-      type: "su",
-      user: hop.viaUser,
-      secretRef: hop.viaSecretRef,
-      promptRe: hop.promptRe,
-    });
-    // 2) ssh into the internal node
-    this.emit("step", `hop: ssh ${hop.to}`);
-    this.writeRaw(`ssh ${shellQuote(hop.to)}\n`);
-    const re = hop.promptRe ? new RegExp(hop.promptRe) : this.passwordPrompt;
+  private async sshStep(step: { to: string; secretRef: string; promptRe?: string }): Promise<void> {
+    this.emit("step", `ssh ${step.to}`);
+    this.writeRaw(`ssh ${shellQuote(step.to)}\n`);
+    const re = step.promptRe ? new RegExp(step.promptRe) : this.passwordPrompt;
     await this.exp.expect(re, this.syncTimeoutMs);
-    await this.sendSecret(hop.sshSecretRef);
+    await this.sendSecret(step.secretRef);
     await this.rawRun("true", this.syncTimeoutMs); // confirm responsive on the node
-    // 3) escalate on the node
-    for (const step of hop.escalate ?? []) await this.suStep(step);
   }
 
   private async sendSecret(ref: string): Promise<void> {

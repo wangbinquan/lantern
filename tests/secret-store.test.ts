@@ -43,6 +43,7 @@ describe("Registry with an injected secret store (Codex C1)", () => {
       const env: EnvDescriptor = {
         id: "e",
         bastion: { host: "h", loginUser: "u", auth: { type: "password", secretRef: "e/low" } },
+        roles: { default: {} },
       };
       r.upsertEnv(env);
       r.setSecret("e/low", "TOPSECRET-VALUE-123");

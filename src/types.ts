@@ -15,16 +15,29 @@ export interface SuStep {
   promptRe?: string;
 }
 
-/** A hop to an internal node: su to a jump user, ssh to the IP, then escalate. */
-export interface Hop {
+/** How to get a shell on a named internal node (RFC-0007): su on the bastion to an
+ *  ssh-capable user, then ssh in. Shared by every role that lands on this node. */
+export interface NodeReach {
+  /** su chain on the bastion to become a user that can ssh to `to`. */
+  via?: SuStep[];
   to: string;
-  viaUser: string;
-  viaSecretRef: string;
   sshSecretRef: string;
-  /** Escalation steps to run after landing on the internal node. */
-  escalate?: SuStep[];
   promptRe?: string;
 }
+
+/** A per-operation identity (RFC-0007): land on `at` (a node, or the bastion) and su
+ *  to the role's user. The skill names the role; the su password stays in the keychain. */
+export interface Role {
+  /** Node name from `EnvDescriptor.nodes`, or undefined = stay on the bastion. */
+  at?: string;
+  /** su chain at `at` to reach the role's identity. */
+  su?: SuStep[];
+}
+
+/** A flattened connection step (resolveChain output) the session engine executes. */
+export type ChainStep =
+  | { kind: "su"; user: string; secretRef: string; promptRe?: string }
+  | { kind: "ssh"; to: string; secretRef: string; promptRe?: string };
 
 export interface BastionAuth {
   type: "password" | "key";
@@ -55,8 +68,10 @@ export interface EnvDescriptor {
   id: string;
   label?: string;
   bastion: Bastion;
-  escalate?: SuStep[];
-  hops?: Hop[];
+  /** Named internal nodes reachable from the bastion (defined once, shared by roles). */
+  nodes?: Record<string, NodeReach>;
+  /** Per-operation identities; at least one. The skill picks which by name. */
+  roles: Record<string, Role>;
   shellInit?: string;
   promptSyncTimeoutMs?: number;
   session?: SessionPolicy;

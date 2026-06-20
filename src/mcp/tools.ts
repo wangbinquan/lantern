@@ -4,14 +4,16 @@
  * Lantern's whole surface: list environments, and run a command on one over its
  * multi-hop/su SSH session.
  */
-import type { SessionPool } from "../session";
 import type { Registry } from "../registry";
+import { resolveRole, type SessionPool } from "../session";
 import { catastrophicReason } from "../safety/catastrophic";
 
 /** One executed (or refused/failed) command, for the read-only spectator log (RFC-0006). */
 export interface ExecLogEntry {
   ts: number;
   env: string;
+  /** The role (identity) the command ran as (RFC-0007); absent if refused pre-resolution. */
+  role?: string;
   command: string;
   exitCode: number | null;
   stdoutBytes: number;
@@ -33,6 +35,8 @@ export interface McpDeps {
 export interface ExecArgs {
   env: string;
   command: string;
+  /** Which identity to run as (RFC-0007). Omit if the env has exactly one role. */
+  role?: string;
   timeoutMs?: number;
 }
 
@@ -67,16 +71,19 @@ export async function execTool(deps: McpDeps, args: ExecArgs): Promise<ExecResul
     });
     throw new Error(`refused (catastrophic): ${reason}`);
   }
-  if (!deps.registry.getEnv(args.env)) throw new Error(`unknown environment "${args.env}"`);
+  const env = deps.registry.getEnv(args.env);
+  if (!env) throw new Error(`unknown environment "${args.env}"`);
+  const role = resolveRole(env, args.role); // explicit, or the sole role, else throws
   let r;
   try {
-    r = await deps.pool.run(args.env, args.command, args.timeoutMs);
+    r = await deps.pool.run(args.env, role, args.command, args.timeoutMs);
   } catch (e) {
     // the command was issued but the session failed (timeout/marker loss) — still
     // mirror it to the spectator log (RFC-0006: executed OR failed, not just success).
     deps.onExec?.({
       ts: Date.now(),
       env: args.env,
+      role,
       command: args.command,
       exitCode: null,
       stdoutBytes: 0,
@@ -87,6 +94,7 @@ export async function execTool(deps: McpDeps, args: ExecArgs): Promise<ExecResul
   deps.onExec?.({
     ts: Date.now(),
     env: args.env,
+    role,
     command: args.command,
     exitCode: r.exitCode,
     stdoutBytes: Buffer.byteLength(r.stdout),
@@ -96,12 +104,15 @@ export async function execTool(deps: McpDeps, args: ExecArgs): Promise<ExecResul
 }
 
 export interface EnvListResult {
-  environments: { id: string; label?: string }[];
+  environments: { id: string; label?: string; roles: string[] }[];
 }
 
-/** List configured environments (ids + labels; no secrets). */
+/** List configured environments (ids + labels + role names; no secrets). */
 export function envListTool(deps: McpDeps): EnvListResult {
   return {
-    environments: deps.registry.listEnvs().map((e) => ({ id: e.id, label: e.label })),
+    environments: deps.registry.listEnvs().map((e) => {
+      const env = deps.registry.getEnv(e.id);
+      return { id: e.id, label: e.label, roles: env ? Object.keys(env.roles) : [] };
+    }),
   };
 }

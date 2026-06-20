@@ -18,13 +18,16 @@ export const SuStepSchema = z.object({
   promptRe: z.string().optional(),
 });
 
-export const HopSchema = z.object({
+export const NodeReachSchema = z.object({
+  via: z.array(SuStepSchema).optional(),
   to: HOSTNAME,
-  viaUser: USERNAME,
-  viaSecretRef: z.string().min(1),
   sshSecretRef: z.string().min(1),
-  escalate: z.array(SuStepSchema).optional(),
   promptRe: z.string().optional(),
+});
+
+export const RoleSchema = z.object({
+  at: z.string().optional(),
+  su: z.array(SuStepSchema).optional(),
 });
 
 export const BastionAuthSchema = z.object({
@@ -48,16 +51,27 @@ export const SessionPolicySchema = z.object({
   idleSec: z.number().nonnegative().optional(),
 });
 
-export const EnvDescriptorSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().optional(),
-  bastion: BastionSchema,
-  escalate: z.array(SuStepSchema).optional(),
-  hops: z.array(HopSchema).optional(),
-  shellInit: z.string().optional(),
-  promptSyncTimeoutMs: z.number().optional(),
-  session: SessionPolicySchema.optional(),
-});
+export const EnvDescriptorSchema = z
+  .object({
+    id: z.string().min(1),
+    label: z.string().optional(),
+    bastion: BastionSchema,
+    nodes: z.record(z.string(), NodeReachSchema).optional(),
+    roles: z
+      .record(z.string(), RoleSchema)
+      .refine((r) => Object.keys(r).length > 0, "at least one role is required"),
+    shellInit: z.string().optional(),
+    promptSyncTimeoutMs: z.number().optional(),
+    session: SessionPolicySchema.optional(),
+  })
+  // every role.at (other than the reserved "bastion" / omitted) must name a defined node
+  .refine(
+    (env) =>
+      Object.values(env.roles).every(
+        (role) => !role.at || role.at === "bastion" || env.nodes?.[role.at] !== undefined,
+      ),
+    'a role\'s `at` must name a node in `nodes` (or be omitted / "bastion")',
+  );
 
 /** Type inferred from the schema (must stay assignable to types.ts EnvDescriptor). */
 export type ParsedEnvDescriptor = z.infer<typeof EnvDescriptorSchema>;

@@ -22,6 +22,7 @@ function descriptor(over: Partial<EnvDescriptor> = {}): EnvDescriptor {
       auth: { type: "password", secretRef: "low" },
       insecureHostKey: true,
     },
+    roles: { default: {} },
     ...over,
   };
 }

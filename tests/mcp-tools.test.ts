@@ -12,6 +12,7 @@ function setup(): { deps: McpDeps; registry: Registry; pool: SessionPool } {
   const env: EnvDescriptor = {
     id: "e",
     bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
+    roles: { default: {} },
   };
   registry.upsertEnv(env);
   const pool = new SessionPool(registry, localFactory);
@@ -114,6 +115,7 @@ describe("MCP tools (RFC-0005)", () => {
     registry.upsertEnv({
       id: "e",
       bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
+      roles: { default: {} },
     });
     const seen: ExecLogEntry[] = [];
     const deps: McpDeps = {

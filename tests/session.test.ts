@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnPty } from "../src/pty";
 import { SessionError, SessionManager, type SessionEvent, type SessionOptions } from "../src/ssh";
-import type { EnvDescriptor } from "../src/types";
+import type { ChainStep, EnvDescriptor } from "../src/types";
 
 const FIX = `${import.meta.dir}/fixtures/bin`;
 const SECRETS: Record<string, string> = {
@@ -30,19 +30,38 @@ function descriptor(over: Partial<EnvDescriptor> = {}): EnvDescriptor {
   return {
     id: "test",
     bastion: { host: "127.0.0.1", loginUser: "low", auth: { type: "password", secretRef: "low" } },
+    roles: { default: {} }, // engine runs the injected chain; roles only satisfy the type
     ...over,
   };
 }
 
-function mgr(desc: EnvDescriptor, events?: SessionEvent[], extra: Partial<SessionOptions> = {}) {
-  return new SessionManager(factory(), desc, {
-    resolveSecret,
-    whoamiCmd: WHOAMI,
-    syncTimeoutMs: 5000,
-    commandTimeoutMs: 5000,
-    onEvent: events ? (e) => events.push(e) : undefined,
-    ...extra,
-  });
+// chains the engine executes after the bastion login (resolveChain output shape)
+const SU_HIGH: ChainStep[] = [{ kind: "su", user: "high", secretRef: "high" }];
+const HOP_CHAIN: ChainStep[] = [
+  { kind: "su", user: "jump", secretRef: "jump" },
+  { kind: "ssh", to: "10.0.0.12", secretRef: "node12" },
+  { kind: "su", user: "high", secretRef: "high" },
+];
+
+function mgr(
+  desc: EnvDescriptor,
+  chain: ChainStep[] = [],
+  events?: SessionEvent[],
+  extra: Partial<SessionOptions> = {},
+) {
+  return new SessionManager(
+    factory(),
+    desc,
+    {
+      resolveSecret,
+      whoamiCmd: WHOAMI,
+      syncTimeoutMs: 5000,
+      commandTimeoutMs: 5000,
+      onEvent: events ? (e) => events.push(e) : undefined,
+      ...extra,
+    },
+    chain,
+  );
 }
 
 describe("SessionManager", () => {
@@ -73,7 +92,7 @@ describe("SessionManager", () => {
   });
 
   test("escalates via su and runs commands as the target user", async () => {
-    const s = mgr(descriptor({ escalate: [{ type: "su", user: "high", secretRef: "high" }] }));
+    const s = mgr(descriptor(), SU_HIGH);
     try {
       await s.connect();
       expect(await s.whoami()).toBe("high");
@@ -86,19 +105,7 @@ describe("SessionManager", () => {
   });
 
   test("walks su -> ssh hop -> su on the internal node", async () => {
-    const s = mgr(
-      descriptor({
-        hops: [
-          {
-            to: "10.0.0.12",
-            viaUser: "jump",
-            viaSecretRef: "jump",
-            sshSecretRef: "node12",
-            escalate: [{ type: "su", user: "high", secretRef: "high" }],
-          },
-        ],
-      }),
-    );
+    const s = mgr(descriptor(), HOP_CHAIN);
     try {
       await s.connect();
       expect(await s.whoami()).toBe("high");
@@ -110,8 +117,9 @@ describe("SessionManager", () => {
   test("throws SessionError on a failed su (wrong password)", async () => {
     const s = new SessionManager(
       factory(),
-      descriptor({ escalate: [{ type: "su", user: "high", secretRef: "high" }] }),
+      descriptor(),
       { resolveSecret: () => "wrong-password", whoamiCmd: WHOAMI, syncTimeoutMs: 4000 },
+      SU_HIGH,
     );
     await expect(s.connect()).rejects.toBeInstanceOf(SessionError);
     await s.release();
@@ -119,10 +127,7 @@ describe("SessionManager", () => {
 
   test("redacts passwords in events and command output", async () => {
     const events: SessionEvent[] = [];
-    const s = mgr(
-      descriptor({ escalate: [{ type: "su", user: "high", secretRef: "high" }] }),
-      events,
-    );
+    const s = mgr(descriptor(), SU_HIGH, events);
     try {
       await s.connect();
       const r = await s.run(`echo "pw is pw-high"`);
@@ -185,10 +190,7 @@ describe("SessionManager", () => {
 
   test("emits step + write events during escalation", async () => {
     const events: SessionEvent[] = [];
-    const s = mgr(
-      descriptor({ escalate: [{ type: "su", user: "high", secretRef: "high" }] }),
-      events,
-    );
+    const s = mgr(descriptor(), SU_HIGH, events);
     try {
       await s.connect();
       expect(events.some((e) => e.kind === "step" && e.text.includes("su - high"))).toBe(true);
@@ -214,7 +216,7 @@ describe("SessionManager", () => {
   });
 
   test("caps oversized command output (M5)", async () => {
-    const s = mgr(descriptor(), undefined, { maxStdoutBytes: 50 });
+    const s = mgr(descriptor(), [], undefined, { maxStdoutBytes: 50 });
     try {
       await s.connect();
       const r = await s.run("printf 'x%.0s' $(seq 1 500)"); // 500 x's

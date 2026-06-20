@@ -10,7 +10,8 @@ import {
   buildEnvInitPlan,
   type AuthAnswer,
   type EnvInitAnswers,
-  type HopAnswer,
+  type NodeAnswer,
+  type RoleAnswer,
   type SuAnswer,
 } from "./env-init-plan";
 import { fetchHostKeyFingerprint, type HostKeyResult } from "./host-key";
@@ -106,40 +107,42 @@ export async function runEnvInit(id: string, opts: EnvInitOpts, deps: EnvInitDep
     }
   }
 
-  const escalate = await collectSuChain(asker, "登录后 su 到谁?");
-
-  // ---- hops ----
-  const hops: HopAnswer[] = [];
-  if (await confirm(asker, "要跳内网吗?", false)) {
+  // ---- nodes (how to reach each internal machine; shared by roles) ----
+  const nodes: NodeAnswer[] = [];
+  if (await confirm(asker, "要配置内网节点吗?", false)) {
     do {
-      const to = await ask(asker, "  内网地址", { validate: v.host });
-      const viaUser = await ask(asker, "  跳板用户 (在堡垒上 su 到)", { validate: v.username });
-      const viaPassword = await ask(asker, `  ${viaUser} 的密码`, {
+      const name = await ask(asker, "  节点名 (如 app1)", { validate: v.username });
+      const via = await collectSuChain(asker, "  到该节点前,在堡垒上 su 到谁?");
+      const to = await ask(asker, "  节点地址", { validate: v.host });
+      const sshPassword = await ask(asker, "  ssh 该节点的密码", {
         secret: true,
         validate: v.nonEmpty,
       });
-      const sshPassword = await ask(asker, "  ssh 内网的密码", {
-        secret: true,
-        validate: v.nonEmpty,
-      });
-      const hopEsc = await collectSuChain(asker, "  内网上 su 到谁?");
-      hops.push({
-        to,
-        viaUser,
-        viaPassword,
-        sshPassword,
-        escalate: hopEsc.length ? hopEsc : undefined,
-      });
-    } while (await confirm(asker, "再跳一个内网节点?", false));
+      nodes.push({ name, via: via.length ? via : undefined, to, sshPassword });
+    } while (await confirm(asker, "再配一个节点?", false));
   }
 
-  // ---- assemble + deliver (connection only — services/logs are each skill's job) ----
+  // ---- roles (per-operation identities; at least one) ----
+  const nodeNames = nodes.map((n) => n.name);
+  const roleAt = oneOf(["bastion", ...nodeNames]);
+  const roles: RoleAnswer[] = [];
+  do {
+    const name = await ask(asker, "角色名 (如 restart / filexfer)", { validate: v.username });
+    const at = await ask(asker, `  在哪台机? [${["bastion", ...nodeNames].join("/")}]`, {
+      default: "bastion",
+      validate: roleAt,
+    });
+    const su = await collectSuChain(asker, `  在 ${at} 上 su 成谁?`);
+    roles.push({ name, at: at === "bastion" ? undefined : at, su: su.length ? su : undefined });
+  } while (await confirm(asker, "再加一个角色?", false));
+
+  // ---- assemble + deliver (connection + roles only — business is each skill's job) ----
   const answers: EnvInitAnswers = {
     id,
     label: label || undefined,
     bastion: { host, port, loginUser, auth, hostKeySha256, insecureHostKey },
-    escalate: escalate.length ? escalate : undefined,
-    hops: hops.length ? hops : undefined,
+    nodes: nodes.length ? nodes : undefined,
+    roles,
   };
   const plan = buildEnvInitPlan(answers);
 

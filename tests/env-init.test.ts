@@ -18,15 +18,17 @@ interface AddParams {
 function refsOf(env: EnvDescriptor): string[] {
   const s = new Set<string>();
   if (env.bastion.auth.secretRef) s.add(env.bastion.auth.secretRef);
-  for (const e of env.escalate ?? []) s.add(e.secretRef);
-  for (const h of env.hops ?? []) {
-    s.add(h.viaSecretRef);
-    s.add(h.sshSecretRef);
-    for (const e of h.escalate ?? []) s.add(e.secretRef);
+  for (const node of Object.values(env.nodes ?? {})) {
+    s.add(node.sshSecretRef);
+    for (const v of node.via ?? []) s.add(v.secretRef);
+  }
+  for (const role of Object.values(env.roles)) {
+    for (const su of role.su ?? []) s.add(su.secretRef);
   }
   return [...s].sort();
 }
 
+// minimal valid answers: bastion + one bastion role
 const base: EnvInitAnswers = {
   id: "prod-a",
   bastion: {
@@ -35,57 +37,66 @@ const base: EnvInitAnswers = {
     auth: { kind: "password", password: "pw-ops" },
     hostKeySha256: "abc123",
   },
+  roles: [{ name: "default" }],
 };
 
-describe("buildEnvInitPlan (RFC-0002 slice 1)", () => {
-  test("bastion-only password auth", () => {
+describe("buildEnvInitPlan (RFC-0007)", () => {
+  test("bastion-only password auth + a bare role", () => {
     const { env, secrets } = buildEnvInitPlan(base);
     expect(env.id).toBe("prod-a");
     expect(env.bastion.auth).toMatchObject({ type: "password", secretRef: "prod-a/bastion" });
     expect(secrets).toEqual({ "prod-a/bastion": "pw-ops" });
-    expect(env.escalate).toBeUndefined();
+    expect(env.roles).toEqual({ default: {} });
+    expect(env.nodes).toBeUndefined();
     expect(() => EnvDescriptorSchema.parse(env)).not.toThrow();
   });
 
-  test("bastion su chain → indexed refs", () => {
+  test("role su chain → indexed refs", () => {
     const { env, secrets } = buildEnvInitPlan({
       ...base,
-      escalate: [
-        { user: "approot", password: "pw1" },
-        { user: "deeper", password: "pw2" },
-      ],
-    });
-    expect(env.escalate).toEqual([
-      { type: "su", user: "approot", secretRef: "prod-a/bastion-su0" },
-      { type: "su", user: "deeper", secretRef: "prod-a/bastion-su1" },
-    ]);
-    expect(secrets["prod-a/bastion-su0"]).toBe("pw1");
-    expect(secrets["prod-a/bastion-su1"]).toBe("pw2");
-  });
-
-  test("hop with its own su chain", () => {
-    const { env, secrets } = buildEnvInitPlan({
-      ...base,
-      hops: [
+      roles: [
         {
-          to: "192.168.10.5",
-          viaUser: "jump",
-          viaPassword: "vp",
-          sshPassword: "sp",
-          escalate: [{ user: "appadmin", password: "ap" }],
+          name: "deploy",
+          su: [
+            { user: "approot", password: "pw1" },
+            { user: "deeper", password: "pw2" },
+          ],
         },
       ],
     });
-    expect(env.hops?.[0]).toEqual({
-      to: "192.168.10.5",
-      viaUser: "jump",
-      viaSecretRef: "prod-a/hop0-via",
-      sshSecretRef: "prod-a/hop0-ssh",
-      escalate: [{ type: "su", user: "appadmin", secretRef: "prod-a/hop0-su0" }],
+    expect(env.roles.deploy?.su).toEqual([
+      { type: "su", user: "approot", secretRef: "prod-a/role-deploy-su0" },
+      { type: "su", user: "deeper", secretRef: "prod-a/role-deploy-su1" },
+    ]);
+    expect(secrets["prod-a/role-deploy-su0"]).toBe("pw1");
+    expect(secrets["prod-a/role-deploy-su1"]).toBe("pw2");
+  });
+
+  test("node with a via chain + a role landing on it", () => {
+    const { env, secrets } = buildEnvInitPlan({
+      ...base,
+      nodes: [
+        {
+          name: "app1",
+          via: [{ user: "jump", password: "vp" }],
+          to: "192.168.10.5",
+          sshPassword: "sp",
+        },
+      ],
+      roles: [{ name: "restart", at: "app1", su: [{ user: "appadmin", password: "ap" }] }],
     });
-    expect(secrets["prod-a/hop0-via"]).toBe("vp");
-    expect(secrets["prod-a/hop0-ssh"]).toBe("sp");
-    expect(secrets["prod-a/hop0-su0"]).toBe("ap");
+    expect(env.nodes?.app1).toEqual({
+      via: [{ type: "su", user: "jump", secretRef: "prod-a/node-app1-via0" }],
+      to: "192.168.10.5",
+      sshSecretRef: "prod-a/node-app1-ssh",
+    });
+    expect(env.roles.restart).toEqual({
+      at: "app1",
+      su: [{ type: "su", user: "appadmin", secretRef: "prod-a/role-restart-su0" }],
+    });
+    expect(secrets["prod-a/node-app1-via0"]).toBe("vp");
+    expect(secrets["prod-a/node-app1-ssh"]).toBe("sp");
+    expect(secrets["prod-a/role-restart-su0"]).toBe("ap");
   });
 
   test("key auth with passphrase", () => {
@@ -124,15 +135,12 @@ describe("buildEnvInitPlan (RFC-0002 slice 1)", () => {
   test("secrets keys exactly match the descriptor's secretRefs", () => {
     const { env, secrets } = buildEnvInitPlan({
       ...base,
-      escalate: [{ user: "approot", password: "p" }],
-      hops: [
-        {
-          to: "10.0.0.2",
-          viaUser: "jump",
-          viaPassword: "v",
-          sshPassword: "s",
-          escalate: [{ user: "ad", password: "a" }],
-        },
+      nodes: [
+        { name: "n1", via: [{ user: "jump", password: "v" }], to: "10.0.0.2", sshPassword: "s" },
+      ],
+      roles: [
+        { name: "ops", at: "n1", su: [{ user: "ad", password: "a" }] },
+        { name: "xfer", su: [{ user: "dep", password: "d" }] },
       ],
     });
     expect(Object.keys(secrets).sort()).toEqual(refsOf(env));
@@ -140,7 +148,10 @@ describe("buildEnvInitPlan (RFC-0002 slice 1)", () => {
 
   test("rejects a shell-metachar username (schema validation)", () => {
     expect(() =>
-      buildEnvInitPlan({ ...base, escalate: [{ user: "root; rm -rf /", password: "p" }] }),
+      buildEnvInitPlan({
+        ...base,
+        roles: [{ name: "x", su: [{ user: "root; rm -rf /", password: "p" }] }],
+      }),
     ).toThrow();
   });
 
@@ -149,9 +160,17 @@ describe("buildEnvInitPlan (RFC-0002 slice 1)", () => {
       buildEnvInitPlan({ ...base, bastion: { ...base.bastion, host: "h$(id)" } }),
     ).toThrow();
   });
+
+  test("rejects an env with no roles", () => {
+    expect(() => buildEnvInitPlan({ ...base, roles: [] })).toThrow();
+  });
+
+  test("rejects a role.at that names no node", () => {
+    expect(() => buildEnvInitPlan({ ...base, roles: [{ name: "x", at: "ghost" }] })).toThrow();
+  });
 });
 
-describe("runEnvInit flow (RFC-0002 slice 4)", () => {
+describe("runEnvInit flow (RFC-0007)", () => {
   function captureDeps(answers: string[], over: Partial<EnvInitDeps> = {}) {
     const sent: { method: string; params: Record<string, unknown> }[] = [];
     const deps: EnvInitDeps = {
@@ -171,10 +190,23 @@ describe("runEnvInit flow (RFC-0002 slice 4)", () => {
     return { sent, deps };
   }
 
-  test("password bastion + host-key auto-pin → env.add then env.use", async () => {
-    // ordered answers: label, host, port, user, authKind, password,
-    //   confirm-pin, su(none), confirm-hops(n)
-    const { sent, deps } = captureDeps(["", "h", "", "ops", "", "pw-ops", "", "", "n"]);
+  test("password bastion + host-key auto-pin + one bastion role → env.add then env.use", async () => {
+    // label, host, port, user, authKind, password, confirm-pin, nodes?(n),
+    //   role: name, at(default bastion), su(none), more-roles(n)
+    const { sent, deps } = captureDeps([
+      "",
+      "h",
+      "",
+      "ops",
+      "",
+      "pw-ops",
+      "",
+      "n",
+      "default",
+      "",
+      "",
+      "n",
+    ]);
     await runEnvInit("prod-a", {}, deps);
 
     expect(sent.map((s) => s.method)).toEqual(["env.add", "env.use"]);
@@ -185,14 +217,59 @@ describe("runEnvInit flow (RFC-0002 slice 4)", () => {
       port: 22,
       hostKeySha256: "deadbeefhex",
     });
-    expect(add.env.bastion.auth.type).toBe("password");
+    expect(add.env.roles).toEqual({ default: {} });
     expect(add.secrets[add.env.bastion.auth.secretRef!]).toBe("pw-ops");
     expect(sent[1]!.params).toEqual({ id: "prod-a" });
   });
 
+  test("a node + two roles across bastion and node", async () => {
+    const { sent, deps } = captureDeps([
+      "prod",
+      "h",
+      "",
+      "low",
+      "",
+      "pw",
+      "", // bastion + pin
+      "y", // configure nodes?
+      "app1",
+      "jump",
+      "jp",
+      "",
+      "10.0.0.12",
+      "sp", // node1: name, via-user, via-pw, via-stop, to, ssh-pw
+      "n", // more nodes?
+      "restart",
+      "app1",
+      "svcuser",
+      "svcpw",
+      "", // role1: name, at, su-user, su-pw, su-stop
+      "y", // more roles?
+      "filexfer",
+      "",
+      "deployer",
+      "deppw",
+      "", // role2: name, at(bastion), su-user, su-pw, su-stop
+      "n", // more roles?
+    ]);
+    await runEnvInit("prod-a", { noUse: true }, deps);
+
+    const add = sent[0]!.params as unknown as AddParams;
+    expect(add.env.nodes?.app1?.to).toBe("10.0.0.12");
+    expect(add.env.nodes?.app1?.via?.[0]).toMatchObject({ type: "su", user: "jump" });
+    expect(add.env.roles.restart).toMatchObject({ at: "app1" });
+    expect(add.env.roles.restart?.su?.[0]).toMatchObject({ user: "svcuser" });
+    expect(add.env.roles.filexfer?.at).toBeUndefined(); // bastion
+    expect(add.env.roles.filexfer?.su?.[0]).toMatchObject({ user: "deployer" });
+    // passwords landed in the secrets map under the generated refs
+    expect(Object.values(add.secrets)).toEqual(
+      expect.arrayContaining(["jp", "sp", "svcpw", "deppw"]),
+    );
+  });
+
   test("--insecure-host-key skips the fetch + pin; --no-use skips env.use", async () => {
     const { sent, deps } = captureDeps(
-      ["", "h", "", "ops", "", "pw", "", "n"], // no host-key Qs, no su/hop
+      ["", "h", "", "ops", "", "pw", "n", "default", "", "", "n"], // no host-key Qs
       {
         fetchFingerprint: () => {
           throw new Error("must not fetch when --insecure-host-key");
@@ -216,9 +293,10 @@ describe("runEnvInit flow (RFC-0002 slice 4)", () => {
   });
 
   test("scan failure + EXPLICIT insecure confirmation sets insecureHostKey (H-1)", async () => {
-    const { sent, deps } = captureDeps(["", "h", "", "ops", "", "pw", "", "y", "", "n"], {
-      fetchFingerprint: () => null,
-    });
+    const { sent, deps } = captureDeps(
+      ["", "h", "", "ops", "", "pw", "", "y", "n", "default", "", "", "n"],
+      { fetchFingerprint: () => null },
+    );
     await runEnvInit("e", {}, deps);
     const add = sent[0]!.params as unknown as AddParams;
     expect(add.env.bastion.insecureHostKey).toBe(true);
