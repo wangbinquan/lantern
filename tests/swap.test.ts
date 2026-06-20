@@ -67,6 +67,35 @@ describe("uploadArtifact (RFC-0003 slice 2)", () => {
       /could not read remote checksum/,
     );
   });
+
+  test("on mismatch: never moves into place, discards staging (H-3 atomicity)", async () => {
+    const cmds: string[] = [];
+    const run: SwapRun = (cmd) => {
+      cmds.push(cmd);
+      if (cmd.includes("sha256sum") || cmd.includes("shasum")) {
+        return Promise.resolve({ stdout: `${"b".repeat(64)}  /x\n`, exitCode: 0 });
+      }
+      return Promise.resolve({ stdout: "", exitCode: 0 });
+    };
+    await expect(uploadArtifact(run, art, "/app/x.jar", { tmpPath: "/t" })).rejects.toThrow(
+      /mismatch/,
+    );
+    expect(cmds.some((c) => c.startsWith("mv "))).toBe(false); // live path untouched
+    expect(cmds.some((c) => c.includes("rm -f '/app/x.jar.lantern.new'"))).toBe(true); // staging cleaned
+  });
+
+  test("a verified upload moves staging → remotePath (H-3)", async () => {
+    const cmds: string[] = [];
+    const run: SwapRun = (cmd) => {
+      cmds.push(cmd);
+      if (cmd.includes("sha256sum") || cmd.includes("shasum")) {
+        return Promise.resolve({ stdout: `${art.sha256}  /x\n`, exitCode: 0 });
+      }
+      return Promise.resolve({ stdout: "", exitCode: 0 });
+    };
+    await uploadArtifact(run, art, "/app/x.jar", { tmpPath: "/t" });
+    expect(cmds).toContain("mv '/app/x.jar.lantern.new' '/app/x.jar'");
+  });
 });
 
 describe("put round-trip through the session (LOCAL_SHELL integration)", () => {
@@ -260,6 +289,48 @@ describe("swap + restart orchestration (LOCAL_SHELL integration)", () => {
       expect(res?.swapped).toBe(false);
       expect(res?.rolledBack).toBe(true);
       expect(readFileSync(remotePath)).toEqual(Buffer.from("OLD-GOOD")); // restored
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a broken restartCmd reports restarted=false + rollbackError (H-4)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lantern-swaph4-"));
+    const artifactPath = join(dir, "art.bin");
+    const remotePath = join(dir, "deployed.bin");
+    writeFileSync(remotePath, Buffer.from("OLD"));
+    writeFileSync(artifactPath, Buffer.from("NEW"));
+    const registry = new Registry(":memory:");
+    // restartCmd `false` always exits 1 → restart fails, and the rollback restart fails too
+    registry.upsertEnv(
+      envSwap({ mode: "manual", remotePath, restartCmd: "false", healthCmd: "true" }),
+    );
+    const pool = new SessionPool(registry, localFactory);
+    try {
+      const r = await dispatch(
+        { registry, pool },
+        {
+          id: 1,
+          method: "swap",
+          params: { envId: "e", service: "svc", file: artifactPath },
+        },
+      );
+      expect(r.ok).toBe(true);
+      const res = r.ok
+        ? (r.result as {
+            swapped: boolean;
+            restarted: boolean;
+            rolledBack: boolean;
+            rollbackError?: string;
+          })
+        : null;
+      expect(res?.swapped).toBe(false); // never healthy → CLI exits non-zero
+      expect(res?.restarted).toBe(false); // not assumed-true (H-4)
+      expect(res?.rolledBack).toBe(false); // rollback's restart also failed
+      expect(res?.rollbackError).toContain("bad state");
+      expect(readFileSync(remotePath)).toEqual(Buffer.from("OLD")); // cp still restored the artifact
     } finally {
       await pool.releaseAll();
       registry.close();
