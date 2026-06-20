@@ -19,14 +19,16 @@ re-add business features.
 - **After every push, verify CI** (`gh run list/view` — check the *conclusion*,
   not just `gh run watch` exit). Fix red main promptly.
 - **Never commit real secrets.** Env registry lives in `~/.lantern/` (outside the
-  repo); secrets live in the OS keychain, read only by the MCP server; passwords are
+  repo); secrets live in the OS secret store (macOS keychain / Windows DPAPI / Linux
+  secret-service, sqlite fallback), read only by the MCP server; passwords are
   injected at the PTY and redacted from every tool result (model never sees them).
 
 ## Toolchain (Bun)
 - `bun install` / `bun test` / `bun run <script>` / `bunx`.
 - **`bun:sqlite`** for the env registry (no better-sqlite3). **`ssh2`** for the
   real multi-hop/su PTY transport. **`@modelcontextprotocol/sdk`** (stdio) for the
-  MCP server. OS keychain for secrets (macOS `security`).
+  MCP server. Cross-platform OS secret store (macOS `security` / Windows DPAPI /
+  Linux `secret-tool`); CI on Linux+macOS+Windows; release = `bun --compile` binaries.
 - Scripts: `bun run typecheck` (tsc --noEmit), `bun run lint` (oxlint),
   `bun run format` / `format:check` (prettier), `bun test`.
 - **Pre-push:** run `bun run typecheck && bun run lint && bun run format:check && bun test`

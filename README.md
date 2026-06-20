@@ -25,7 +25,9 @@
 
 **动态节点:运行时 target**(RFC-0008)。k8s 等场景 worker 是动态的——只配 master,worker IP 让 skill 跑 `kubectl get node` 自己取。节点可设模板 `to: "${target}"` + `toPattern` 网段白名单;`exec(env, command, role, target)` 时把发现的 IP 当 `target` 传,Lantern 校验(host 字符 + toPattern)后 ssh 进去。配一个 worker 模板,不是逐台。
 
-安全/可见性交给 MCP 客户端:**逐条 `exec` 确认** = opencode 的工具调用权限网关;**实时可见** = opencode TUI 显示每次工具调用 + 结果。Lantern 只保留一条**灾难命令兜底**(拒绝 `rm -rf` / `mkfs` / fork bomb 等)。密码全程在 OS 钥匙串,经 PTV 注入、从每个结果里脱敏。
+安全/可见性交给 MCP 客户端:**逐条 `exec` 确认** = opencode 的工具调用权限网关;**实时可见** = opencode TUI 显示每次工具调用 + 结果。Lantern 只保留一条**灾难命令兜底**(拒绝 `rm -rf` / `mkfs` / fork bomb 等)。密码全程在 **OS 密钥库**(macOS 钥匙串 / Windows DPAPI / Linux Secret Service `secret-tool`,都没有则 SQLite 兜底),经 PTV 注入、从每个结果里脱敏。
+
+**跨平台**:Linux / macOS / Windows 三平台 CI 全绿;release 产出各平台单文件二进制(`bun --compile` 把 Bun 运行时 + ssh2 + sqlite 全打进去),打 `v*` tag 即自动发布。
 
 **旁观模式 `lantern monitor`**(RFC-0006):想要一个独立的"只读 ssh 窗口"?另开一个终端跑 `lantern monitor`,它跟读 server 的 `~/.lantern/exec.jsonl`,实时镜像环境上**已执行的每条命令 + 输出 + 退出码 + 拒绝**(无密码)。左边 opencode 对话+批,右边 monitor 旁观。
 
@@ -69,7 +71,7 @@ bun src/mcp/server.ts
 | `ssh/` | SessionManager(执行注入的 su/ssh 链)+ ssh2 真实传输 — **最难的核心** |
 | `pty/` | 命令标记协议 + expect FSM + spawn 传输 |
 | `session/` | SessionPool(每 env+角色一条常驻会话)+ `resolveChain`(角色→链) |
-| `registry/` | 环境**连接 + 角色**描述符(zod)+ bun:sqlite + 钥匙串密钥 @ `~/.lantern` |
+| `registry/` | 环境**连接 + 角色**描述符(zod)+ bun:sqlite + 跨平台密钥库 @ `~/.lantern` |
 | `safety/` | 灾难命令兜底(`rm -rf` / `mkfs` / fork bomb …) |
 | `cli/` | env-admin CLI(`env init/list/use/rm` → 直写注册表,out-of-band) |
 
