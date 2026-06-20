@@ -59,12 +59,19 @@ describe(".opencode/opencode.json hardened ruleset", () => {
 });
 
 describe("evaluatePermission semantics", () => {
-  test("deny wins regardless of order", () => {
+  test("findLast: a later deny overrides an earlier allow", () => {
     const rules = [
       { action: "bash", resource: "*", effect: "allow" as const },
       { action: "bash", resource: "*danger*", effect: "deny" as const },
     ];
     expect(evaluatePermission(rules, "bash", "do danger now")).toBe("deny");
+  });
+  test("findLast: a later allow overrides an earlier deny (ORDER MATTERS)", () => {
+    const rules = [
+      { action: "bash", resource: "*danger*", effect: "deny" as const },
+      { action: "bash", resource: "*", effect: "allow" as const },
+    ];
+    expect(evaluatePermission(rules, "bash", "do danger now")).toBe("allow");
   });
   test("findLast among allow/ask", () => {
     const rules = [

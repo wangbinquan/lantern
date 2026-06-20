@@ -83,3 +83,37 @@
 - **#5 观测分级的确切清单**:哪些 Arthas/dlv 操作算"被动快照(`snapshot`,免确认)"、哪些算"侵入式(`observe`,需确认)"——建议由你/运维拍板一份白名单(design.md 给了默认划分)。
 - **#1 是否在会话开始强制清空 saved 规则**:默认建议"清空 + 禁止对改动点 always",但这会让每次都重新确认重复的只读命令(只读本就 allow,影响小)。如需保留只读的 always 便利,可只清空"非 allowlist 命中"的 saved 项。
 - **#6 是否引入更强本地认证**:MVP loopback+password 已足够研发场景;若多用户/跨机访问再升级。
+
+---
+
+# Codex 代码评审跟进 (2026-06-20,实现后)
+
+对全部 `src/` 代码 + 设计的对抗式评审,处置如下。🔧=已改并加测试 · ✍️=已澄清 · 📝=已记录/后续。
+
+## Critical
+- **C1 凭据可被 opencode `read:*` 越权读出** — 📝**部分缓解 + 待治理**:凭据移到 `~/.lantern`(0700,工作区外,见 C2/H7),且 `external_directory:deny`;但 opencode `read` 工具对绝对路径可能不 assert `external_directory`,故**真正边界是 OS 权限**:`~/.lantern` 0700 + db 0600。彻底消除需 keychain/Vault 或"opencode 与 lanternd 用不同 OS 用户"——已记入 design/§11,Phase 2 落地。
+- **C2 unix socket 无认证** — 🔧**部分**:socket 0600 + `~/.lantern` 0700,拦掉**跨用户**进程;**同用户**进程仍可连(研发单机可接受)。能力令牌/`SO_PEERCRED` 记为 Phase 2。
+- **C3 "read-only by construction" 不成立(描述符注入)** — 🔧**已改**:`logs.k8s` 模板与 `locate.pid` 现经分类器校验为只读、**fail-closed**;`snapshot` 改两步解析**数值 PID**(无 `$()`);数据字段 shellQuote。+注入拒绝测试。
+
+## High
+- **H1 ssh host-key 不校验** — 📝**记录**:`connectSsh2` 未设 `hostVerifier`。需在描述符加期望指纹并 fail-closed(connectSsh2 本就走受控 e2e,未进 CI)。列 Phase 2 安全项。
+- **H2 建链期描述符注入(su/ssh)** — 🔧**已改**:`su -`/`ssh` 的 user/host 已 shellQuote + schema 正则校验(无 shell 元字符)。
+- **H3 docker/git 嵌套子命令误判 read** — 🔧**已改**:`docker image`(管理组)/`git config|branch|tag|remote` 移出只读集。
+- **H4 "只读"二进制有写模式** — 🔧**已改**:jmap/jinfo 移出只读(jstack/jps/pgrep/pidof 保留);`sed --in-place`/`w` 拦截;`find -fprint0/-fprintf` 拦截。
+- **H5 `rm -r -f`/`--recursive --force` 绕过灾难拒绝** — 🔧**已改**:`hasCatastrophicRm` 按任意短/长/拆分标志检测 recursive+force。
+- **H6 ensureFresh/队列竞态 + 超时残留脏 PTY** — 📝**记录**:建议把 freshness 检查并入队列、超时即 release 重建。当前 Expecter 串行 + 拒并发 expect 缓解了一部分;完整修复列后续。
+- **H7 注册表目录/DB 默认 umask** — 🔧**已改**:`~/.lantern` 0700 + registry.db 0600(+测试)。
+
+## Medium
+- **M1 policy 镜像与 opencode `findLast` 不一致** — 🔧**已改**:核实源码 `evaluate()` 为 findLast;`policy.ts` 改纯 findLast + 默认 ask;新增"后置 allow 覆盖前置 deny"测试。**规则顺序成约定:deny 必须置后**。
+- **M2 AGENTS.md 与实际 deny 不符** — 🔧**已改**:opencode.json 加 `su` deny;AGENTS.md 改为"ssh/su 拒绝、kubectl/管道需确认应拒绝"的准确表述。
+- **M3 审批者看不到展开后的远端命令** — 🔧**已改**:`lantern` CLI 在 stderr 回显 `[lantern <env>] $ <expanded command>`。
+- **M4 审计漏 env.add/env.use、无 actor/关联** — 📝**记录**:列入审计加固(actor/peer-UID/关联 opencode 审批事件)Phase 2。
+- **M5 state/snapshot 输出无上限** — 📝**记录**:建议在 `SessionManager.run`/`pool.run` 统一字节截断(当前仅 logs 有 `head -c`)。列后续。
+
+## Low
+- **L1 `LANTERN_LOCAL_SHELL` 静默本机执行** — 🔧**已改**:启动打印醒目 DEV/DEMO 警告横幅。
+- **L2 fixture 不覆盖真实 PTY/host-key/超时** — 📝**记录**:Phase 2 加 localhost sshd 受控集成(host-key 不符、ECHO-on、超时、并发重连)。
+- **L3 未知尾随参数被静默忽略** — 📝**记录**:hand-rolled parser 对受控 agent 用法够用;后续可换严格 schema。
+
+**Codex 确认无误**:registry SQL 参数化无注入;`sendSecret` 脱敏路径无明文泄漏;NDJSON happy-path 分帧正确。

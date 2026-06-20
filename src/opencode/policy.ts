@@ -3,12 +3,14 @@
  * our `.opencode/opencode.json` ruleset offline (and by a future `lantern doctor`).
  * It is NOT used at runtime by opencode — opencode evaluates its own rules.
  *
- * Semantics (design.md §2.1 / §6, verified against packages/core/src/permission.ts
- * on the pinned 1.17.8 source — re-verify on your build, Phase 0):
+ * Semantics (verified against packages/core/src/permission.ts:102-110 on the
+ * pinned 1.17.8 source — `evaluate()` is `findLast` over the ruleset):
  *   - rules are {action, resource, effect: allow|ask|deny}, glob-matched
- *   - DENY WINS: any matching deny rule ⇒ deny
- *   - otherwise the LAST matching allow/ask rule wins (findLast)
- *   - no match ⇒ ask (fail-safe)
+ *   - the LAST matching rule wins (findLast); default ask if none match
+ *   - opencode's denied() also evaluates findLast over the AGENT rules so a
+ *     persisted "always" can't override an agent deny; with no saved rules this
+ *     reduces to plain findLast. ORDER MATTERS: our config places deny rules LAST
+ *     so they take precedence over the earlier allow/ask rules they overlap.
  */
 import { readFileSync } from "node:fs";
 
@@ -33,13 +35,8 @@ function ruleMatches(rule: PermRule, action: string, resource: string): boolean 
 }
 
 export function evaluatePermission(rules: PermRule[], action: string, resource: string): Effect {
-  const matches = rules.filter((r) => ruleMatches(r, action, resource));
-  if (matches.some((r) => r.effect === "deny")) return "deny"; // deny wins
-  for (let i = matches.length - 1; i >= 0; i--) {
-    const m = matches[i]!;
-    if (m.effect !== "deny") return m.effect; // findLast among allow/ask
-  }
-  return "ask"; // fail-safe default
+  // Pure findLast — the LAST matching rule wins (opencode permission.ts:106).
+  return rules.findLast((r) => ruleMatches(r, action, resource))?.effect ?? "ask";
 }
 
 export function loadPermissions(jsonPath: string): PermRule[] {

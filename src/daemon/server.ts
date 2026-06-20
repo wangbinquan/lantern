@@ -3,7 +3,7 @@
  * Local socket only (~/.lantern/lanternd.sock) — nothing listens on the network,
  * honoring the env's no-extra-port constraint (the socket is on the operator box).
  */
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import { dispatch, type DispatchDeps } from "./dispatch";
 import type { RpcResponse } from "./protocol";
@@ -15,7 +15,9 @@ export class Daemon {
   constructor(private readonly deps: DispatchDeps) {}
 
   listen(socketPath: string): void {
-    mkdirSync(dirname(socketPath), { recursive: true });
+    const dir = dirname(socketPath);
+    mkdirSync(dir, { recursive: true });
+    chmodSync(dir, 0o700); // owner-only (Codex C2)
     if (existsSync(socketPath)) rmSync(socketPath); // clear a stale socket
     this.socketPath = socketPath;
     const deps = this.deps;
@@ -35,6 +37,7 @@ export class Daemon {
         },
       },
     });
+    chmodSync(socketPath, 0o600); // socket owner-only (Codex C2)
   }
 
   stop(): void {

@@ -31,6 +31,8 @@
     { "action": "bash", "resource": "*rm -rf*", "effect": "deny" },
     { "action": "bash", "resource": "*sudo*", "effect": "deny" },
     { "action": "bash", "resource": "ssh *", "effect": "deny" },
+    { "action": "bash", "resource": "su *", "effect": "deny" },
+    { "action": "bash", "resource": "su", "effect": "deny" },
 
     { "action": "edit", "resource": "*", "effect": "ask" },
     { "action": "write", "resource": "*", "effect": "ask" }

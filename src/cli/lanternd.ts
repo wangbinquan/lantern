@@ -23,7 +23,10 @@ const pool = localShell
   ? new SessionPool(registry, () => () => spawnPty(["bash", "--norc", "--noprofile"]))
   : new SessionPool(registry);
 if (localShell) {
-  process.stderr.write("lanternd: LOCAL-SHELL mode — sessions run on THIS machine (no ssh)\n");
+  process.stderr.write(
+    "\n⚠️  LANTERN_LOCAL_SHELL=1 — DEV/DEMO MODE: sessions run on THIS machine (no ssh).\n" +
+      "    Auto-approved read commands execute locally. Do NOT use against a real environment.\n\n",
+  );
 }
 const daemon = new Daemon({ registry, pool, audit: fileAuditSink(defaultAuditPath()) });
 const socketPath = defaultSocketPath();

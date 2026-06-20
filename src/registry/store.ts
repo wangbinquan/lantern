@@ -6,7 +6,7 @@
  * secrets (secretRef → plaintext), and the currently-selected env.
  */
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { EnvDescriptor, SecretResolver } from "../types";
@@ -33,8 +33,13 @@ export class Registry {
   private readonly db: Database;
 
   constructor(path: string = defaultRegistryPath()) {
-    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
+    if (path !== ":memory:") {
+      const dir = dirname(path);
+      mkdirSync(dir, { recursive: true });
+      chmodSync(dir, 0o700); // secrets live here — owner-only (Codex H7)
+    }
     this.db = new Database(path, { create: true });
+    if (path !== ":memory:") chmodSync(path, 0o600);
     this.db.run("PRAGMA journal_mode = WAL");
     this.db.run(
       "CREATE TABLE IF NOT EXISTS environments (id TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at INTEGER NOT NULL)",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rpc } from "../src/cli/client";
@@ -97,5 +97,21 @@ describe("rpc client error handling", () => {
     await expect(
       rpc("/tmp/lantern-does-not-exist.sock", { id: 1, method: "ping" }, 2000),
     ).rejects.toBeDefined();
+  });
+});
+
+describe("registry file permissions (Codex H7)", () => {
+  test("dir is 0700 and db is 0600", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lantern-perm-"));
+    const sub = join(dir, "store");
+    const path = join(sub, "registry.db");
+    try {
+      const r = new Registry(path);
+      r.close();
+      expect(statSync(sub).mode & 0o777).toBe(0o700);
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

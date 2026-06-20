@@ -15,8 +15,11 @@ tool. The hardened permission ruleset is in `.opencode/opencode.json`.
 4. Run opencode (`opencode serve` + TUI) with `--password` bound to loopback.
 
 ## Hard rules for the agent
-- **Operate the environment ONLY via `lantern`.** Never run raw `ssh`, `su`,
-  `kubectl`, or shell pipelines — they are denied by `.opencode/opencode.json`.
+- **Operate the environment ONLY via `lantern`.** Raw `ssh`/`su` are denied by
+  `.opencode/opencode.json`; raw `kubectl`/other env tools and shell pipelines
+  (`|`/`>`) fall to a confirmation prompt — reject them and use `lantern` instead.
+  (Only `lanternd` holds the credentials, so direct tools can't reach the env
+  anyway; the gate's job is to keep you on the `lantern` path.)
 - **Read-only first.** `lantern env list|current`, `lantern logs|state|snapshot`
   are read-only-by-construction and auto-run (still displayed). Everything else
   (`env use`, `exec`, and the Phase-2 `observe`/`redefine`/`put`/`swap`/`restart`)

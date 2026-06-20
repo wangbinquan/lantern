@@ -43,6 +43,11 @@ if (parsed.method === "ping") {
   process.stdout.write(JSON.stringify(resp.result, null, 2) + "\n");
 } else {
   const r = resp.result as RunResultPayload;
+  // Surface the EXPANDED remote command so the operator sees what actually ran
+  // (read subcommands expand server-side; Codex M3).
+  process.stderr.write(
+    `[lantern${params.envId ? ` ${String(params.envId)}` : ""}] $ ${r.command}\n`,
+  );
   if (r.stdout.length > 0) {
     process.stdout.write(r.stdout.endsWith("\n") ? r.stdout : r.stdout + "\n");
   }
