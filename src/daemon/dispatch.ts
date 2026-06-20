@@ -23,6 +23,29 @@ export interface DispatchDeps {
   classifyOpts?: ClassifyOptions;
   now?: () => number;
   bus?: EventBus;
+  /** In-flight per-service mutation keys (`env/service`) — serialize put/swap/restart. */
+  locks?: Set<string>;
+}
+
+/**
+ * Refuse a concurrent put/swap/restart on the same service so two deploys can't
+ * interleave (the lock is acquired synchronously before the first await, so a
+ * second concurrent dispatch sees it held). No-op if deps.locks is absent.
+ */
+async function withServiceLock<T>(
+  deps: DispatchDeps,
+  key: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (deps.locks?.has(key)) {
+    throw new Error(`another put/restart/swap is already in progress for "${key}"`);
+  }
+  deps.locks?.add(key);
+  try {
+    return await fn();
+  } finally {
+    deps.locks?.delete(key);
+  }
 }
 
 export async function dispatch(deps: DispatchDeps, req: RpcRequest): Promise<RpcResponse> {
@@ -250,30 +273,39 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
     case "put": {
       const env = resolveEnv(deps, p);
       const svc = resolveService(env, p);
-      const file = strOpt(p.file);
-      if (!file) throw new Error("missing --file");
-      const artifact = await readArtifact(file);
-      const run: SwapRun = (cmd) => deps.pool.run(env.id, cmd, numOpt(p.timeoutMs));
-      pubCommand(deps, env.id, "put", `put ${file} → ${svc.swap?.remotePath ?? "(no remotePath)"}`);
-      const result = await doPut(run, svc, artifact, numOpt(p.chunkSize));
-      record(deps, env.id, "put", `put ${file} → ${result.remotePath}`, {
-        stdout: "",
-        exitCode: 0,
+      return withServiceLock(deps, `${env.id}/${svc.name}`, async () => {
+        const file = strOpt(p.file);
+        if (!file) throw new Error("missing --file");
+        const artifact = await readArtifact(file);
+        const run: SwapRun = (cmd) => deps.pool.run(env.id, cmd, numOpt(p.timeoutMs));
+        pubCommand(
+          deps,
+          env.id,
+          "put",
+          `put ${file} → ${svc.swap?.remotePath ?? "(no remotePath)"}`,
+        );
+        const result = await doPut(run, svc, artifact, numOpt(p.chunkSize));
+        record(deps, env.id, "put", `put ${file} → ${result.remotePath}`, {
+          stdout: "",
+          exitCode: 0,
+        });
+        return { service: svc.name, ...result, bytes: artifact.bytes };
       });
-      return { service: svc.name, ...result, bytes: artifact.bytes };
     }
 
     case "restart": {
       const env = resolveEnv(deps, p);
       const svc = resolveService(env, p);
-      const cmd = svc.swap?.restartCmd;
-      if (!cmd) throw new Error(`service "${svc.name}" has no swap.restartCmd`);
-      pubCommand(deps, env.id, "restart", cmd);
-      const run: SwapRun = (c) => deps.pool.run(env.id, c, numOpt(p.timeoutMs));
-      const r = await doRestart(run, svc);
-      record(deps, env.id, "restart", cmd, r);
-      pubExit(deps, env.id, "restart", r);
-      return { service: svc.name, command: cmd, exitCode: r.exitCode, stdout: r.stdout };
+      return withServiceLock(deps, `${env.id}/${svc.name}`, async () => {
+        const cmd = svc.swap?.restartCmd;
+        if (!cmd) throw new Error(`service "${svc.name}" has no swap.restartCmd`);
+        pubCommand(deps, env.id, "restart", cmd);
+        const run: SwapRun = (c) => deps.pool.run(env.id, c, numOpt(p.timeoutMs));
+        const r = await doRestart(run, svc);
+        record(deps, env.id, "restart", cmd, r);
+        pubExit(deps, env.id, "restart", r);
+        return { service: svc.name, command: cmd, exitCode: r.exitCode, stdout: r.stdout };
+      });
     }
 
     case "swap": {
@@ -285,22 +317,25 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
       const rollback = p.rollback === false ? false : undefined; // --no-rollback
       const chunkSize = numOpt(p.chunkSize);
       if (p.dryRun === true) {
+        // dry-run is read-only — no mutation lock
         return { dryRun: true, ...previewSwap(svc, artifact, { rollback, chunkSize }) };
       }
-      const run: SwapRun = (c) => deps.pool.run(env.id, c, numOpt(p.timeoutMs));
-      const result = await doSwap(run, svc, artifact, {
-        rollback,
-        chunkSize,
-        onStep: (label, command) => pubCommand(deps, env.id, "swap", `[${label}] ${command}`),
+      return withServiceLock(deps, `${env.id}/${svc.name}`, async () => {
+        const run: SwapRun = (c) => deps.pool.run(env.id, c, numOpt(p.timeoutMs));
+        const result = await doSwap(run, svc, artifact, {
+          rollback,
+          chunkSize,
+          onStep: (label, command) => pubCommand(deps, env.id, "swap", `[${label}] ${command}`),
+        });
+        record(
+          deps,
+          env.id,
+          "swap",
+          `swap ${file} → ${result.remotePath} (swapped=${result.swapped} rolledBack=${result.rolledBack})`,
+          { stdout: "", exitCode: result.swapped ? 0 : 1 },
+        );
+        return { ...result };
       });
-      record(
-        deps,
-        env.id,
-        "swap",
-        `swap ${file} → ${result.remotePath} (swapped=${result.swapped} rolledBack=${result.rolledBack})`,
-        { stdout: "", exitCode: result.swapped ? 0 : 1 },
-      );
-      return { ...result };
     }
 
     case "observe": {

@@ -130,7 +130,9 @@ H-4(swap 忽略 restart/rollback 退出码)、M-1(swap 内部命令可见性)、
 
 - 🔧**HIGH 并发 swap 共享 staging 路径(TOCTOU)** — 两个同服务并发 swap 共用确定性 `remotePath.lantern.new`,
   checksum 与 mv 之间可被另一 swap 改写 → 装错/损坏。**已改**:staging 改为**每次上传唯一**
-  (`remotePath.lantern.<rand>.new`,后缀可注入测试),消除 TOCTOU/复用;并发降为良性"后 mv 者胜"(各装自己已校验的产物)。
+  (`remotePath.lantern.<rand>.new`,后缀可注入测试),消除 TOCTOU/复用。**后补**:再加 **per-service 锁**
+  (`DispatchDeps.locks`,key=`env/service`),直接**拒绝**并发同服务 put/swap/restart(部署不该相互竞争),
+  语义更干净(不再"后 mv 者胜")。
 - 🔧**MEDIUM stale staging 复用** — 同根因;唯一 staging 一并解决(清理失败只留一个不会被复用的孤儿文件)。
 - 🔧**LOW `--timeout abc`→NaN 绕过 L-1** — `numOpt` 对 NaN 透传 → 超时被禁用/立即失败。**已改**:
   `numOpt` 用 `Number.isFinite` 拒 NaN(单一收口,覆盖 timeout/count/chunk-size,完成 L-1)。

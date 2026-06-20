@@ -391,6 +391,39 @@ describe("swap + restart orchestration (LOCAL_SHELL integration)", () => {
     }
   });
 
+  test("refuses a swap while the service lock is held, releases it after (per-service lock)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "lantern-lock-"));
+    const artifactPath = join(dir, "art.bin");
+    const remotePath = join(dir, "deployed.bin");
+    writeFileSync(artifactPath, Buffer.from("X"));
+    const registry = new Registry(":memory:");
+    registry.upsertEnv(
+      envSwap({ mode: "manual", remotePath, restartCmd: "echo r", healthCmd: "true" }),
+    );
+    const pool = new SessionPool(registry, localFactory);
+    const locks = new Set<string>(["e/svc"]); // pre-held (simulates an in-flight swap)
+    const deps: DispatchDeps = { registry, pool, locks };
+    const swapReq = {
+      id: 1,
+      method: "swap" as const,
+      params: { envId: "e", service: "svc", file: artifactPath },
+    };
+    try {
+      const blocked = await dispatch(deps, swapReq);
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) expect(blocked.error).toContain("in progress");
+
+      locks.delete("e/svc"); // the in-flight swap finished
+      const r = await dispatch(deps, swapReq);
+      expect(r.ok).toBe(true);
+      expect(locks.has("e/svc")).toBe(false); // lock released after the swap
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("restart runs the service's restartCmd", async () => {
     const dir = mkdtempSync(join(tmpdir(), "lantern-restart-"));
     const registry = new Registry(":memory:");

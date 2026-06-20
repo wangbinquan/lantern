@@ -44,7 +44,7 @@ writeFileSync(tokenPath, token, { mode: 0o600 });
 chmodSync(tokenPath, 0o600);
 
 const daemon = new Daemon(
-  { registry, pool, audit: fileAuditSink(defaultAuditPath()), bus },
+  { registry, pool, audit: fileAuditSink(defaultAuditPath()), bus, locks: new Set() },
   { token },
 );
 const socketPath = defaultSocketPath();
