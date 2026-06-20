@@ -77,9 +77,9 @@ bun src/mcp/server.ts
 
 ## 现状
 
-🟢 MCP server 已实现(TypeScript / Bun;**91 tests**,CI 绿)。核心:多跳/su PTV 会话引擎、SQLite 连接注册表、钥匙串密钥、host-key pin、`env init` 向导、`env_list` + `exec` MCP 工具、灾难兜底。已用 MCP SDK 客户端端到端验证(`tools/list` + `exec` + 灾难拒绝)。`connectSsh2`(真实 ssh)需活动 sshd,以受控 e2e 验证。
+🟢 **v0.1.0 已发布**(TypeScript / Bun;**132 tests**;CI 绿 @ Linux/macOS/Windows)。核心:多跳/su PTV 会话引擎、按操作选身份(role/target/多层节点)、跨平台密钥库、host-key pin、`env init` 向导、`env_list` + `exec` MCP 工具、`lantern monitor` 旁观、灾难兜底。已用 MCP SDK 客户端端到端验证;真实 ssh 多跳需活动 sshd,以实机验证。
 
-设计文档:[RFC-0005](./design/rfc/0005-mcp-server.md)(现行架构)。RFC-0001..0004 与 `design/{proposal,design,plan}.md` 是被其取代的历史(旧 CLI/bash 架构)。
+完整变更见 [CHANGELOG.md](./CHANGELOG.md);二进制在 [Releases](https://github.com/wangbinquan/lantern/releases)。设计文档:[RFC-0005](./design/rfc/0005-mcp-server.md)(MCP 本源)、[RFC-0006](./design/rfc/0006-exec-monitor.md)(旁观)、[RFC-0007](./design/rfc/0007-per-operation-roles.md)(角色)、[RFC-0008](./design/rfc/0008-runtime-target.md)(运行时 target);RFC-0001..0004 与 `design/{proposal,design,plan}.md` 是被取代的历史(旧 CLI/bash 架构)。
 
 ## 名字由来
 
