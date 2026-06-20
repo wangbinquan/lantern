@@ -16,8 +16,10 @@
 
 | 工具 | 作用 |
 |---|---|
-| `env_list` | 列出已配置的环境(id + label) |
-| `exec` | 在某环境的常驻 SSH 会话上跑一条命令 → `{stdout, exitCode}`;密码在 PTY 注入、**绝不回传** |
+| `env_list` | 列出已配置的环境(id + label + 角色名) |
+| `exec` | 以某**角色**身份在环境上跑一条命令 → `{stdout, exitCode}`;密码在 PTY 注入、**绝不回传** |
+
+**按操作选身份:角色(role)**(RFC-0007)。隔离环境每台机上有很多用户,按操作选(重启服务用一个、传文件用另一个,可能在不同节点)。所以描述符是**骨架 + 角色**:`bastion` 登录 + 命名 `nodes`(怎么到每台机)+ `roles`(在哪台、su 成谁)。`exec(env, command, role)` 由 skill 按操作传 `role`,Lantern 把那条链解析出来、在对应提示符注入该角色的 su 密码(keychain)。同角色复用一条常驻会话,换角色切另一条。
 
 安全/可见性交给 MCP 客户端:**逐条 `exec` 确认** = opencode 的工具调用权限网关;**实时可见** = opencode TUI 显示每次工具调用 + 结果。Lantern 只保留一条**灾难命令兜底**(拒绝 `rm -rf` / `mkfs` / fork bomb 等)。密码全程在 OS 钥匙串,经 PTV 注入、从每个结果里脱敏。
 
@@ -27,8 +29,8 @@
 
 1. **配置环境(out-of-band,密钥不经模型)**——交互向导,隐藏输入直接进钥匙串、host key 经 `ssh-keyscan` 确认后 pin(TOFU):
    ```bash
-   bun src/cli/lantern.ts env init prod-a       # 问多跳/su 链 + 登录凭据
-   bun src/cli/lantern.ts env list
+   bun src/cli/lantern.ts env init prod-a       # 问登录 + 内网节点 + 各操作角色
+   bun src/cli/lantern.ts env list              # 显示 id/label/角色名
    ```
 2. **在 opencode v2 配置里声明 MCP server**(opencode 用命令拉起它,走 stdio):
    ```jsonc
@@ -46,7 +48,8 @@ bun run typecheck && bun run lint && bun run format:check && bun test   # 同 CI
 
 # 会话跑在本机 bash 而非真实环境:
 export LANTERN_HOME=$(mktemp -d)/lantern LANTERN_LOCAL_SHELL=1
-printf 'demo\n\nh\n\nme\n\npw\n\nn\nn\n' | bun src/cli/lantern.ts env init demo --insecure-host-key
+# 答:label, host, port, user, auth, 密码, 配节点?(n), 角色名, 在哪台(bastion), su?(空), 再加?(n)
+printf 'demo\nh\n\nme\n\npw\nn\ndefault\n\n\nn\n' | bun src/cli/lantern.ts env init demo --insecure-host-key
 bun src/cli/lantern.ts env list
 # 启 MCP server(opencode 会这样拉起它);用任意 MCP 客户端调 exec
 bun src/mcp/server.ts
@@ -57,10 +60,10 @@ bun src/mcp/server.ts
 | 模块 | 职责 |
 |---|---|
 | `mcp/` | stdio MCP server(`env_list` + `exec` 工具)— opencode 拉起的就是它 |
-| `ssh/` | SessionManager(多跳/su PTY 编排)+ ssh2 真实传输 — **最难的核心** |
+| `ssh/` | SessionManager(执行注入的 su/ssh 链)+ ssh2 真实传输 — **最难的核心** |
 | `pty/` | 命令标记协议 + expect FSM + spawn 传输 |
-| `session/` | SessionPool(每环境一条常驻会话) |
-| `registry/` | 环境**连接**描述符(zod)+ bun:sqlite + 钥匙串密钥 @ `~/.lantern` |
+| `session/` | SessionPool(每 env+角色一条常驻会话)+ `resolveChain`(角色→链) |
+| `registry/` | 环境**连接 + 角色**描述符(zod)+ bun:sqlite + 钥匙串密钥 @ `~/.lantern` |
 | `safety/` | 灾难命令兜底(`rm -rf` / `mkfs` / fork bomb …) |
 | `cli/` | env-admin CLI(`env init/list/use/rm` → 直写注册表,out-of-band) |
 

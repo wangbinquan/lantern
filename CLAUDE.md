@@ -38,8 +38,8 @@ src/
   mcp/          stdio MCP server (tools: env_list, exec) — opencode spawns this
   ssh/          SessionManager (multi-hop/su PTY) + ssh2 adapter   [the hard part]
   pty/          marker protocol + expect FSM (boundary/exit-code/prompt)
-  session/      SessionPool (one persistent session per env)
-  registry/     env CONNECTION descriptor (zod) + bun:sqlite + keychain secrets
+  session/      SessionPool (one session per env+role) + resolveChain (role→su/ssh chain)
+  registry/     env CONNECTION+ROLES descriptor (zod) + bun:sqlite + keychain secrets
   safety/       catastrophic-command backstop (rm -rf / mkfs / fork bomb …)
   cli/          env-admin CLI (env init/list/rm → registry+keychain, out-of-band)
 tests/          bun:test, one file per module

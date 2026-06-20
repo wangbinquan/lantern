@@ -82,6 +82,18 @@ describe("formatExecLine (RFC-0006 spectator)", () => {
     expect(s).not.toContain("exit");
   });
 
+  test("shows the role (identity) when present (RFC-0007)", () => {
+    const e: ExecLogEntry = {
+      ts: 0,
+      env: "prod-a",
+      role: "restart",
+      command: "systemctl restart svc",
+      exitCode: 0,
+      stdoutBytes: 0,
+    };
+    expect(stripAnsi(formatExecLine(e))).toContain("prod-a (restart) $ systemctl restart svc");
+  });
+
   test("no false truncation marker for multibyte output (Codex L5)", () => {
     const out = "日本語ログ"; // 5 chars, 15 bytes — would falsely mark if compared by char length
     const e: ExecLogEntry = {
