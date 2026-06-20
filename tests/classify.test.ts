@@ -191,4 +191,14 @@ describe("hardening (Codex review H3/H4/H5)", () => {
     expect(v("find . -fprintf /tmp/o '%p'")).toBe("mutate");
     expect(v("find . -name '*.log'")).toBe("read");
   });
+
+  test("write redirection without a space before > is caught (H-2)", () => {
+    expect(v("echo ok>/tmp/pwn")).toBe("mutate");
+    expect(v("echo ok >/tmp/pwn")).toBe("mutate");
+    expect(v("cat>/tmp/x")).toBe("mutate");
+    expect(v("printf x>>/tmp/log")).toBe("mutate");
+  });
+  test("2>/dev/null stays read (not a file write)", () => {
+    expect(v("grep x f 2>/dev/null")).toBe("read");
+  });
 });

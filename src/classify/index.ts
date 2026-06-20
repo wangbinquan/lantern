@@ -361,7 +361,10 @@ export function stripWrappers(segment: string): string {
 function hasDangerousShell(cmd: string): { bad: boolean; reason: string } {
   if (/\$\(/.test(cmd) || /`/.test(cmd)) return { bad: true, reason: "command substitution" };
   if (/<\(|>\(/.test(cmd)) return { bad: true, reason: "process substitution" };
-  if (/(^|\s)\d*>>?\s*(?!&|\/dev\/null\b)\S/.test(cmd))
+  // a `>`/`>>` redirect to a file — with OR WITHOUT a space before `>` (so
+  // `echo x>f` is caught, not just `echo x > f`; Codex H-2). Excludes `>&` fd-dup
+  // and `>/dev/null`. Over-flagging a quoted `>` as a write is fail-safe (→ ask).
+  if (/\d*>>?\s*(?!&)(?!\/dev\/null\b)[^\s|&]/.test(cmd))
     return { bad: true, reason: "write redirection" };
   if (/&>/.test(cmd) && !/&>\s*\/dev\/null\b/.test(cmd))
     return { bad: true, reason: "write redirection" };

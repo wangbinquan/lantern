@@ -174,6 +174,13 @@ describe("previewSwap (RFC-0003 dry-run)", () => {
         art,
       ),
     ).toThrow(/read-only/);
+    // H-2: a no-space write redirect must also be caught
+    expect(() =>
+      previewSwap(
+        svc({ mode: "manual", remotePath: "/x", restartCmd: "r", healthCmd: "echo ok>/tmp/pwned" }),
+        art,
+      ),
+    ).toThrow(/read-only/);
   });
 
   test("requires remotePath + restartCmd", () => {
