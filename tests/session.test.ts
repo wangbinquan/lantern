@@ -172,4 +172,19 @@ describe("SessionManager", () => {
       await s.release();
     }
   });
+
+  test("a command timeout drops the session; the next run reconnects cleanly (H6)", async () => {
+    const s = mgr(descriptor());
+    try {
+      await s.connect();
+      expect(s.factoryCalls).toBe(1);
+      // marker never arrives within the timeout → the dirty PTY is released.
+      await expect(s.run("sleep 5", { timeoutMs: 200 })).rejects.toBeDefined();
+      const r = await s.run("echo back");
+      expect(r.stdout).toBe("back");
+      expect(s.factoryCalls).toBe(2);
+    } finally {
+      await s.release();
+    }
+  });
 });

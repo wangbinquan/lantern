@@ -89,10 +89,21 @@ export class SessionManager {
     return this.connecting;
   }
 
-  /** Run a command, (re)connecting first if needed. Serialized per session. */
+  /**
+   * Run a command, (re)connecting first if needed. The freshness check runs
+   * INSIDE the queue so it can't race a concurrent run (Codex H6); on a
+   * timeout/marker-loss the dirty PTY is dropped so the next run reconnects.
+   */
   async run(cmd: string, runOpts: { timeoutMs?: number } = {}): Promise<RunResult> {
-    await this.ensureFresh();
-    return this.enqueue(() => this.rawRun(cmd, runOpts.timeoutMs ?? this.commandTimeoutMs));
+    return this.enqueue(async () => {
+      await this.ensureFresh();
+      try {
+        return await this.rawRun(cmd, runOpts.timeoutMs ?? this.commandTimeoutMs);
+      } catch (e) {
+        await this.release(); // timeout/marker-loss left the PTY dirty — drop it
+        throw e;
+      }
+    });
   }
 
   /** Whoami on the current (deepest) shell — handy for diagnostics. */
