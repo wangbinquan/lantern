@@ -61,6 +61,9 @@ Secrets stay in the OS keychain; the MCP server injects them at the PTY and
 
 ## How verification works without a real env
 The isolated env / internal LLM gateway / proprietary CLI aren't available here.
-Verify the `lantern` stack against a **local fake multi-hop/su target** (spawned
-bash + fake password-prompt scripts; see `tests/` and `scripts/`). The
-opencode-driven leg is config-ready but needs the gateway + a real env to run live.
+Verify the SSH engine + MCP server against a **local fake target**: set
+`LANTERN_LOCAL_SHELL=1` so sessions spawn a local `bash` instead of ssh, then
+drive the MCP server over stdio with the `@modelcontextprotocol/sdk` **client**
+(`tools/list` + `exec` + catastrophic→isError). Unit tests call the tool handlers
+(`src/mcp/tools.ts`) directly. The opencode leg is config-ready (`mcp.servers`)
+but needs opencode + the gateway + a real env to run live.

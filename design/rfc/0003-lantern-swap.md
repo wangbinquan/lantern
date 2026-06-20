@@ -1,6 +1,6 @@
 # RFC-0003: `lantern swap` — 换包闭环(上传 / 重启 / 健康 / 回滚)
 
-- **Status**: Implemented (2026-06-20)
+- **Status**: Superseded by RFC-0005 — feature removed (was a business command; now an opencode skill over the `exec` tool)
 - **Date**: 2026-06-20
 - **Author**: Lantern
 - **Relates**: `design.md`(在线诊断够不到时的"加日志→构建→换包→复现"回路)、RFC-0001(watch)、`ServiceDescriptor.swap`(已存在的 `SwapRecipe` 字段)

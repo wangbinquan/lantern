@@ -1,6 +1,6 @@
 # RFC-0001: `lantern watch` — 只读实时会话镜像
 
-- **Status**: Implemented (2026-06-20)
+- **Status**: Superseded by RFC-0005 — feature removed (was a business command; now an opencode skill over the `exec` tool)
 - **Date**: 2026-06-20
 - **Author**: Lantern
 - **Relates**: `design.md`(实时可见性 / 第 2 层安全)、`AGENTS.md`、`review-followups.md`

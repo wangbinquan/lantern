@@ -1,6 +1,6 @@
 # RFC-0002: `lantern env init` — 交互式接环境向导
 
-- **Status**: Implemented (2026-06-20)
+- **Status**: Superseded by RFC-0005 — feature removed (was a business command; now an opencode skill over the `exec` tool)
 - **Date**: 2026-06-20
 - **Author**: Lantern
 - **Relates**: `design.md` §3.1(环境描述符)、RFC-0001、C1(钥匙串)、H1(host-key pin)

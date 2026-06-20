@@ -1,12 +1,12 @@
 {
   "name": "lantern",
   "version": "0.0.0",
-  "description": "AI environment problem-localization assistant for SSH-only isolated environments",
+  "description": "MCP server that connects to an SSH-only, network-isolated environment and executes commands (multi-hop/su)",
   "private": true,
   "type": "module",
   "bin": {
     "lantern": "src/cli/lantern.ts",
-    "lanternd": "src/cli/lanternd.ts"
+    "lantern-mcp": "src/mcp/server.ts"
   },
   "scripts": {
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",

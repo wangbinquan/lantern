@@ -1,40 +1,11 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "permissions": [
-    { "action": "*", "resource": "*", "effect": "ask" },
-
-    { "action": "read", "resource": "*", "effect": "allow" },
-    { "action": "grep", "resource": "*", "effect": "allow" },
-    { "action": "glob", "resource": "*", "effect": "allow" },
-    { "action": "list", "resource": "*", "effect": "allow" },
-
-    { "action": "external_directory", "resource": "*", "effect": "ask" },
-    { "action": "external_directory", "resource": "*/.lantern/*", "effect": "deny" },
-
-    { "action": "bash", "resource": "*", "effect": "ask" },
-    { "action": "bash", "resource": "lantern env list*", "effect": "allow" },
-    { "action": "bash", "resource": "lantern env current*", "effect": "allow" },
-    { "action": "bash", "resource": "lantern logs *", "effect": "allow" },
-    { "action": "bash", "resource": "lantern state *", "effect": "allow" },
-    { "action": "bash", "resource": "lantern snapshot *", "effect": "allow" },
-
-    { "action": "bash", "resource": "*|*", "effect": "ask" },
-    { "action": "bash", "resource": "*>*", "effect": "ask" },
-
-    { "action": "bash", "resource": "*;*", "effect": "deny" },
-    { "action": "bash", "resource": "*&*", "effect": "deny" },
-    { "action": "bash", "resource": "*`*", "effect": "deny" },
-    { "action": "bash", "resource": "*$(*", "effect": "deny" },
-    { "action": "bash", "resource": "*${*", "effect": "deny" },
-    { "action": "bash", "resource": "*<(*", "effect": "deny" },
-    { "action": "bash", "resource": "*>(*", "effect": "deny" },
-    { "action": "bash", "resource": "*rm -rf*", "effect": "deny" },
-    { "action": "bash", "resource": "*sudo*", "effect": "deny" },
-    { "action": "bash", "resource": "ssh *", "effect": "deny" },
-    { "action": "bash", "resource": "su *", "effect": "deny" },
-    { "action": "bash", "resource": "su", "effect": "deny" },
-
-    { "action": "edit", "resource": "*", "effect": "ask" },
-    { "action": "write", "resource": "*", "effect": "ask" }
-  ]
+  "mcp": {
+    "servers": {
+      "lantern": {
+        "type": "local",
+        "command": ["bun", "/abs/path/to/product-explorer/src/mcp/server.ts"]
+      }
+    }
+  }
 }

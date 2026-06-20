@@ -1,6 +1,6 @@
 # RFC-0004: `lantern observe` — 只读侵入式诊断(Arthas)
 
-- **Status**: Implemented (2026-06-20)
+- **Status**: Superseded by RFC-0005 — feature removed (was a business command; now an opencode skill over the `exec` tool)
 - **Date**: 2026-06-20
 - **Author**: Lantern
 - **Relates**: `design.md` §7(snapshot vs observe)、`classify`(arthas 只读/改动动词集)、`review-followups` #5(观测分级)、RFC-0001(watch)

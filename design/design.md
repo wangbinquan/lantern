@@ -1,5 +1,7 @@
 # Lantern · AI 环境问题定位助手 — 详细设计 (Design)
 
+> ⚠️ **历史文档(已被取代)**:本文描述早期 CLI/bash 架构。现行架构见 [RFC-0005](./rfc/0005-mcp-server.md) —— Lantern 现在是一个只做"连接+执行"的 stdio MCP server,取日志/诊断/换包等改由各业务的 opencode skill 经 `exec` 工具实现。
+
 > 版本: v2 (设计修订版次;基于 anomalyco/opencode **1.17.8** 实测源码;已并入 Codex 评审跟进,见 [review-followups.md](./review-followups.md))
 > 日期: 2026-06-19  ·  配套: [proposal.md](./proposal.md) · [plan.md](./plan.md)
 
