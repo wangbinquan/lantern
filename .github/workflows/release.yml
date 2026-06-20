@@ -44,7 +44,7 @@ jobs:
           ls -la dist
 
       - name: Upload build artifacts (always — lets workflow_dispatch verify the build)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lantern-binaries
           path: dist/*

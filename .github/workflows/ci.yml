@@ -100,7 +100,7 @@ jobs:
 
       - name: Cache bun package downloads
         if: steps.probe.outputs.ts == 'yes'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
