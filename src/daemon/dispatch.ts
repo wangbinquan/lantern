@@ -11,6 +11,7 @@ import type { AuditSink } from "./audit";
 import { buildLogs, buildSnapshot, buildState, locatePidCommand, type LogsFlags } from "./commands";
 import type { SessionPool } from "./pool";
 import type { RpcRequest, RpcResponse } from "./protocol";
+import type { EventBus } from "./watch";
 
 export interface DispatchDeps {
   registry: Registry;
@@ -18,6 +19,7 @@ export interface DispatchDeps {
   audit?: AuditSink;
   classifyOpts?: ClassifyOptions;
   now?: () => number;
+  bus?: EventBus;
 }
 
 export async function dispatch(deps: DispatchDeps, req: RpcRequest): Promise<RpcResponse> {
@@ -84,6 +86,37 @@ function auditMeta(deps: DispatchDeps, envId: string, method: string, command: s
     exitCode: null,
     stdoutBytes: 0,
   });
+  deps.bus?.publish({
+    ts: (deps.now ?? Date.now)(),
+    env: envId,
+    kind: "meta",
+    text: `${method} ${command}`,
+  });
+}
+
+// --- watch bus publishers (RFC-0001 §4.4) ---
+function pubCommand(deps: DispatchDeps, env: string, method: string, command: string): void {
+  deps.bus?.publish({ ts: (deps.now ?? Date.now)(), env, kind: "command", method, command });
+}
+function pubExit(deps: DispatchDeps, env: string, method: string, r: RunResult): void {
+  deps.bus?.publish({
+    ts: (deps.now ?? Date.now)(),
+    env,
+    kind: "exit",
+    method,
+    exitCode: r.exitCode,
+    bytes: Buffer.byteLength(r.stdout),
+    truncated: r.truncated,
+  });
+}
+function pubDenied(
+  deps: DispatchDeps,
+  env: string,
+  method: string,
+  command: string,
+  reason: string,
+): void {
+  deps.bus?.publish({ ts: (deps.now ?? Date.now)(), env, kind: "denied", method, command, reason });
 }
 
 async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
@@ -130,8 +163,10 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
         container: strOpt(p.container),
       };
       const command = buildLogs(svc, env.form, flags);
+      pubCommand(deps, env.id, "logs", command);
       const r = await deps.pool.run(env.id, command, numOpt(p.timeoutMs));
       record(deps, env.id, "logs", command, r);
+      pubExit(deps, env.id, "logs", r);
       return { stdout: r.stdout, exitCode: r.exitCode, command };
     }
 
@@ -139,8 +174,10 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
       const env = resolveEnv(deps, p);
       const svc = resolveService(env, p);
       const command = buildState(svc, env.form);
+      pubCommand(deps, env.id, "state", command);
       const r = await deps.pool.run(env.id, command, numOpt(p.timeoutMs));
       record(deps, env.id, "state", command, r);
+      pubExit(deps, env.id, "state", r);
       return { stdout: r.stdout, exitCode: r.exitCode, command };
     }
 
@@ -154,8 +191,10 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
       if (!pid) throw new Error(`snapshot: could not resolve a PID for service "${svc.name}"`);
       // Step 2: passive diagnostic against the validated numeric PID (no $()).
       const command = buildSnapshot(svc, pid);
+      pubCommand(deps, env.id, "snapshot", command);
       const r = await deps.pool.run(env.id, command, timeoutMs);
       record(deps, env.id, "snapshot", command, r);
+      pubExit(deps, env.id, "snapshot", r);
       return { stdout: r.stdout, exitCode: r.exitCode, command };
     }
 
@@ -176,10 +215,13 @@ async function handle(deps: DispatchDeps, req: RpcRequest): Promise<unknown> {
           verdict.verdict,
           verdict.reason,
         );
+        pubDenied(deps, env.id, "exec", command, verdict.reason);
         throw new Error(`refused (catastrophic): ${verdict.reason}`);
       }
+      pubCommand(deps, env.id, "exec", command);
       const r = await deps.pool.run(env.id, command, numOpt(p.timeoutMs));
       record(deps, env.id, "exec", command, r, verdict.verdict, verdict.reason);
+      pubExit(deps, env.id, "exec", r);
       return {
         stdout: r.stdout,
         exitCode: r.exitCode,

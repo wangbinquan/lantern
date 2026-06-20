@@ -23,7 +23,7 @@ export class SessionError extends Error {
 }
 
 export interface SessionEvent {
-  kind: "step" | "write" | "stdout" | "error";
+  kind: "step" | "write" | "stdout" | "error" | "ready";
   /** Already redacted — safe to display/log. */
   text: string;
 }
@@ -179,6 +179,7 @@ export class SessionManager {
     this.connected = true;
     this.connectedAt = Date.now();
     this.lastActivity = Date.now();
+    this.emit("ready", ""); // signals the chain is fully established (RFC-0001)
   }
 
   private async suStep(step: SuStep): Promise<void> {

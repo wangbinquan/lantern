@@ -8,6 +8,19 @@
  * memory — the persisted record is audit.jsonl, a separate path.
  */
 
+import type { EnvDescriptor } from "../types";
+
+/** Human-readable connection chain for the connect banner (no secrets). */
+export function connectionChain(env: EnvDescriptor): string[] {
+  const chain = [`${env.bastion.loginUser}@${env.bastion.host}`];
+  for (const s of env.escalate ?? []) chain.push(`su ${s.user}`);
+  for (const h of env.hops ?? []) {
+    chain.push(`ssh ${h.to}`);
+    for (const s of h.escalate ?? []) chain.push(`su ${s.user}`);
+  }
+  return chain;
+}
+
 export type WatchEvent =
   | { ts: number; env: string; kind: "connect"; chain: string[] }
   | { ts: number; env: string; kind: "step"; text: string }

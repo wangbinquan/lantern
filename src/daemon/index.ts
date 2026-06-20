@@ -11,7 +11,13 @@ export { SessionPool, type FactoryMaker } from "./pool";
 export { dispatch, type DispatchDeps } from "./dispatch";
 export { fileAuditSink, type AuditEntry, type AuditSink } from "./audit";
 export { Daemon } from "./server";
-export { EventBus, type WatchEvent, type WatchSubscriber, type EventBusOptions } from "./watch";
+export {
+  EventBus,
+  connectionChain,
+  type WatchEvent,
+  type WatchSubscriber,
+  type EventBusOptions,
+} from "./watch";
 export {
   defaultSocketPath,
   defaultAuditPath,

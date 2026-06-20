@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { EventBus, type WatchEvent } from "../src/daemon";
+import { spawnPty } from "../src/pty";
+import { Registry } from "../src/registry";
+import type { EnvDescriptor } from "../src/types";
+import { dispatch, EventBus, SessionPool, type DispatchDeps, type WatchEvent } from "../src/daemon";
 
 function ev(env: string, text: string): WatchEvent {
   return { ts: 0, env, kind: "meta", text };
@@ -77,5 +80,55 @@ describe("EventBus (RFC-0001)", () => {
     bus.subscribe(collector(got));
     expect(() => bus.publish(ev("a", "ok"))).not.toThrow();
     expect(got).toEqual(["ok"]);
+  });
+});
+
+describe("pool + dispatch → bus wiring (RFC-0001 slice 2)", () => {
+  const localFactory = () => () => spawnPty(["bash", "--norc", "--noprofile"]);
+
+  test("a state command publishes connect/command/stdout/exit; catastrophic exec publishes denied", async () => {
+    const registry = new Registry(":memory:");
+    const env: EnvDescriptor = {
+      id: "e",
+      form: "proprietary",
+      bastion: { host: "h", loginUser: "me", auth: { type: "password", secretRef: "x" } },
+      services: [{ name: "sys", runtime: "jvm", locate: { pid: "echo 4242" } }],
+    };
+    registry.upsertEnv(env);
+
+    const bus = new EventBus();
+    const events: WatchEvent[] = [];
+    bus.subscribe((e) => events.push(e));
+    const pool = new SessionPool(registry, localFactory, {}, bus);
+    const deps: DispatchDeps = { registry, pool, bus };
+
+    try {
+      const r = await dispatch(deps, {
+        id: 1,
+        method: "state",
+        params: { envId: "e", service: "sys" },
+      });
+      expect(r.ok).toBe(true);
+      const kinds = events.map((e) => e.kind);
+      expect(kinds).toContain("connect");
+      expect(kinds).toContain("command");
+      expect(kinds).toContain("stdout");
+      expect(kinds).toContain("exit");
+      const cmd = events.find((e) => e.kind === "command");
+      expect(cmd?.kind === "command" && cmd.command).toContain("echo 4242");
+      const connect = events.find((e) => e.kind === "connect");
+      expect(connect?.kind === "connect" && connect.chain[0]).toBe("me@h");
+
+      await dispatch(deps, {
+        id: 2,
+        method: "exec",
+        params: { envId: "e", command: "rm -rf /tmp/x" },
+      });
+      const denied = events.find((e) => e.kind === "denied");
+      expect(denied?.kind === "denied" && denied.reason).toContain("rm -rf");
+    } finally {
+      await pool.releaseAll();
+      registry.close();
+    }
   });
 });

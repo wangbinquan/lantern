@@ -13,6 +13,7 @@ import {
   defaultRegistryDbPath,
   defaultSocketPath,
   defaultTokenPath,
+  EventBus,
   fileAuditSink,
   SessionPool,
 } from "../daemon";
@@ -29,9 +30,12 @@ const registry = new Registry(
   useKeychain ? new KeychainSecretStore() : undefined,
 );
 
+// Watch bus: lanternd publishes everything it does on an env here; `lantern
+// watch` clients subscribe over the socket for a read-only live mirror (RFC-0001).
+const bus = new EventBus();
 const pool = localShell
-  ? new SessionPool(registry, () => () => spawnPty(["bash", "--norc", "--noprofile"]))
-  : new SessionPool(registry);
+  ? new SessionPool(registry, () => () => spawnPty(["bash", "--norc", "--noprofile"]), {}, bus)
+  : new SessionPool(registry, undefined, {}, bus);
 
 // Per-start capability token, required on every RPC (Codex C2).
 const token = randomBytes(32).toString("hex");
@@ -39,7 +43,10 @@ const tokenPath = defaultTokenPath();
 writeFileSync(tokenPath, token, { mode: 0o600 });
 chmodSync(tokenPath, 0o600);
 
-const daemon = new Daemon({ registry, pool, audit: fileAuditSink(defaultAuditPath()) }, { token });
+const daemon = new Daemon(
+  { registry, pool, audit: fileAuditSink(defaultAuditPath()), bus },
+  { token },
+);
 const socketPath = defaultSocketPath();
 
 if (localShell) {
