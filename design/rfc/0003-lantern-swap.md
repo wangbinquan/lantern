@@ -1,6 +1,6 @@
 # RFC-0003: `lantern swap` — 换包闭环(上传 / 重启 / 健康 / 回滚)
 
-- **Status**: Draft
+- **Status**: Implemented (2026-06-20)
 - **Date**: 2026-06-20
 - **Author**: Lantern
 - **Relates**: `design.md`(在线诊断够不到时的"加日志→构建→换包→复现"回路)、RFC-0001(watch)、`ServiceDescriptor.swap`(已存在的 `SwapRecipe` 字段)
@@ -133,7 +133,18 @@ opencode.json 对它们 `ask`(逐条确认);审计记录每步。
 ## 9. Unresolved questions(已定稿)
 
 - **`--dry-run`**:做(预览将要做什么,不改远端)。
-- 上传分块大小:默认 **16 KB base64/块**(可在 swap 参数或描述符调)。
+- 上传分块大小:默认 **16 KB base64/块**(`--chunk-size` 可调)。
 - `put`/`restart` 独立命令:都暴露,`swap` 为主线。
+
+## 10. Implementation notes
+
+- **macOS base64**:BSD `base64` 拒绝位置文件参数(需 `-i`/stdin),解码改为 `base64 -d < tmp`
+  (GNU+BSD 都从 stdin 读)。校验用 `sha256sum || shasum -a 256`(位置参数两者都吃)。CI 在
+  ubuntu+macos 双跑,集成测试做**真实** base64 往返(含二进制字节)验证可移植性。
+- **dry-run 不碰远端**:smoke 验证 `--dry-run` 后 remotePath 不存在;预览含 sha256/字节/路径/
+  命令/chunkCount。
+- **watch 可见**:swap 对每步 publish `command` 事件(`[backup+upload]`/`[restart]`/`[health]`/
+  `[rollback]`),pool 又把内部命令的 stdout 转发到总线 → swap 一次确认,内部全程在 watch 窗口可见。
+- **本地构建归 agent**:swap 取 `--file <已构建产物>`;lanternd 读本机文件 base64 上传。
 - `env init` 是否问 swap 配置(remotePath/restartCmd/health)?v1 先让操作员在描述符里加;init 扩展留后续。
 - 大产物压缩(gzip→base64→远端 gunzip):jar 已压缩,收益小,暂不做。

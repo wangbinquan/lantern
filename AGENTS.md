@@ -28,9 +28,11 @@ tool. The hardened permission ruleset is in `.opencode/opencode.json`.
   anyway; the gate's job is to keep you on the `lantern` path.)
 - **Read-only first.** `lantern env list|current`, `lantern logs|state|snapshot`
   are read-only-by-construction and auto-run (still displayed). Everything else
-  (`env use`, `exec`, and the Phase-2 `observe`/`redefine`/`put`/`swap`/`restart`)
+  (`env use`, `exec`, `put`/`restart`/`swap`, and the Phase-2 `observe`/`redefine`)
   is a mutation and requires explicit per-command confirmation. Implemented today:
-  `env list/use/current`, `logs`, `state`, `snapshot`, `exec`.
+  `env list/use/current/init`, `logs`, `state`, `snapshot`, `exec`, `watch`,
+  `put`, `restart`, `swap` (= backup→upload→restart→health→rollback; `--dry-run` previews,
+  `lantern watch` shows the internals).
 - **Confirm every mutation individually. Never select "always" on a mutating
   command** (it persists across restarts and widens blast radius). Reads may use
   "always".
