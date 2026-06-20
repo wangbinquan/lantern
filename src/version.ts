@@ -1,5 +1,2 @@
-/**
- * Lantern version. Kept in sync with package.json `version` by release tooling
- * (none yet — design phase). Exposed via `lantern --version` once the CLI lands.
- */
-export const VERSION = "0.0.0";
+/** Lantern version — keep in sync with package.json `version`. Shown in the MCP server banner. */
+export const VERSION = "0.1.0";

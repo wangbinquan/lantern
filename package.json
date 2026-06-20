@@ -1,6 +1,6 @@
 {
   "name": "lantern",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "MCP server that connects to an SSH-only, network-isolated environment and executes commands (multi-hop/su)",
   "private": true,
   "type": "module",
